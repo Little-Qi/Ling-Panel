@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" width="64" height="64" role="img" aria-label="LingPanel">
+  <title>LingPanel</title>
+  <defs>
+    <radialGradient id="orb" cx="34%" cy="30%" r="68%">
+      <stop offset="0%" stop-color="#F4F6FF"/>
+      <stop offset="28%" stop-color="#D0D8FF"/>
+      <stop offset="62%" stop-color="#7B8CFF"/>
+      <stop offset="100%" stop-color="#2EC4B6"/>
+    </radialGradient>
+    <linearGradient id="cap" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2E3B60"/>
+      <stop offset="100%" stop-color="#121A2E"/>
+    </linearGradient>
+    <linearGradient id="rim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.28"/>
+      <stop offset="100%" stop-color="#8B9CFF" stop-opacity="0.35"/>
+    </linearGradient>
+    <linearGradient id="chev" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E0E6FF"/>
+      <stop offset="100%" stop-color="#3DD6C6"/>
+    </linearGradient>
+  </defs>
+
+  <!-- 小尺寸专用：胶囊 + 灵珠 + 单枚展开尖括号 -->
+  <rect x="2" y="14" width="60" height="36" rx="18" fill="url(#cap)" stroke="url(#rim)" stroke-width="2"/>
+  <circle cx="21" cy="32" r="13" fill="url(#orb)"/>
+  <circle cx="16.5" cy="27.5" r="3.6" fill="#FFFFFF" opacity="0.62"/>
+  <path d="M40 23.5l10 8.5-10 8.5" fill="none" stroke="url(#chev)" stroke-width="4.5" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="LingPanel">
+  <title>LingPanel</title>
+  <defs>
+    <linearGradient id="tile" x1="10%" y1="0%" x2="90%" y2="100%">
+      <stop offset="0%" stop-color="#1B2540"/>
+      <stop offset="50%" stop-color="#121A2E"/>
+      <stop offset="100%" stop-color="#0B121C"/>
+    </linearGradient>
+
+    <radialGradient id="bloom" cx="28%" cy="20%" r="70%">
+      <stop offset="0%" stop-color="#7B8CFF" stop-opacity="0.38"/>
+      <stop offset="45%" stop-color="#5B6FE0" stop-opacity="0.10"/>
+      <stop offset="100%" stop-color="#0B121C" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="rim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.20"/>
+      <stop offset="55%" stop-color="#7B8CFF" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#2DD4BF" stop-opacity="0.18"/>
+    </linearGradient>
+
+    <linearGradient id="capsule" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#273356"/>
+      <stop offset="52%" stop-color="#162038"/>
+      <stop offset="100%" stop-color="#0D1524"/>
+    </linearGradient>
+
+    <linearGradient id="sheen" x1="0%" y1="0%" x2="100%" y2="40%">
+      <stop offset="0%" stop-color="#C5CEFF" stop-opacity="0.22"/>
+      <stop offset="40%" stop-color="#FFFFFF" stop-opacity="0.06"/>
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0"/>
+    </linearGradient>
+
+    <radialGradient id="orb" cx="34%" cy="28%" r="68%">
+      <stop offset="0%" stop-color="#F0F3FF"/>
+      <stop offset="26%" stop-color="#D0D8FF"/>
+      <stop offset="58%" stop-color="#7B8CFF"/>
+      <stop offset="100%" stop-color="#2EC4B6"/>
+    </radialGradient>
+
+    <radialGradient id="orbGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#8B9CFF" stop-opacity="0.50"/>
+      <stop offset="50%" stop-color="#3DD6C6" stop-opacity="0.14"/>
+      <stop offset="100%" stop-color="#3DD6C6" stop-opacity="0"/>
+    </radialGradient>
+
+    <linearGradient id="chev" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#E0E6FF"/>
+      <stop offset="100%" stop-color="#3DD6C6"/>
+    </linearGradient>
+
+    <filter id="soft" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+  </defs>
+
+  <!-- 方砖本体，砖外全透明 -->
+  <rect x="40" y="40" width="432" height="432" rx="108" fill="url(#tile)"/>
+  <rect x="40" y="40" width="432" height="432" rx="108" fill="url(#bloom)"/>
+  <rect x="41.5" y="41.5" width="429" height="429" rx="106.5" fill="none" stroke="url(#rim)" stroke-width="3"/>
+
+  <!-- 悬浮胶囊 -->
+  <g>
+    <rect x="112" y="190" width="288" height="132" rx="66" fill="url(#capsule)"/>
+    <rect x="112" y="190" width="288" height="132" rx="66" fill="url(#sheen)"/>
+    <rect x="113.5" y="191.5" width="285" height="129" rx="64.5" fill="none" stroke="url(#rim)" stroke-width="2.25"/>
+  </g>
+
+  <!-- 灵珠 -->
+  <circle cx="182" cy="256" r="82" fill="url(#orbGlow)" filter="url(#soft)"/>
+  <circle cx="182" cy="256" r="48" fill="url(#orb)"/>
+  <circle cx="166" cy="240" r="13" fill="#FFFFFF" opacity="0.58"/>
+  <circle cx="182" cy="256" r="48" fill="none" stroke="#FFFFFF" stroke-opacity="0.30" stroke-width="2"/>
+
+  <!-- 展开暗示：一枚干净的双尖括号 -->
+  <g fill="none" stroke="url(#chev)" stroke-width="12" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M292 228l30 28-30 28"/>
+    <path d="M332 228l30 28-30 28" opacity="0.45"/>
+  </g>
+</svg>

@@ -1,0 +1,49 @@
+{
+  "name": "ling-panel",
+  "version": "0.3.0",
+  "description": "灵动面板 — Windows 优先的贴顶本地工作台：待办、Markdown 笔记、链接、番茄钟",
+  "main": "main.js",
+  "license": "MIT",
+  "author": "LingPanel",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.js",
+    "build:win": "electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.lingpanel.app",
+    "productName": "LingPanel",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "artifactName": "LingPanel-${version}-setup.${ext}",
+      "signAndEditExecutable": false,
+      "icon": "assets/app-icon.ico"
+    },
+    "afterPack": "scripts/afterPack.cjs",
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "assets/**/*",
+      "scripts/**/*"
+    ]
+  }
+}

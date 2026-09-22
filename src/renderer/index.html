@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https:; connect-src 'self' https:;" />
+  <title>LING</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body data-mode="compact" data-theme="aurora">
+  <div id="app">
+    <section id="compact" class="compact">
+      <button id="capsule" class="capsule" type="button" title="点击展开 (Alt+Space)">
+        <span class="capsule-dot" aria-hidden="true"></span>
+        <span class="capsule-text">
+          <span id="capsuleLabel" class="capsule-label">LING</span>
+          <span id="capsuleSub" class="capsule-sub">就绪</span>
+        </span>
+        <span id="capsuleBadge" class="capsule-badge" hidden>0</span>
+        <span class="capsule-chevron">›</span>
+      </button>
+    </section>
+
+    <section id="expanded" class="expanded" hidden>
+      <header class="topbar">
+        <div class="topbar-left">
+          <button class="icon-btn" id="btnCollapse" title="收起">‹</button>
+          <div class="brand">
+            <span class="brand-mark"></span>
+            <span class="brand-name">LING</span>
+          </div>
+        </div>
+        <nav class="tabs" id="tabs">
+          <button class="tab active" data-tab="home">首页</button>
+          <button class="tab" data-tab="todo">待办</button>
+          <button class="tab" data-tab="notes">笔记</button>
+          <button class="tab" data-tab="links">链接</button>
+          <button class="tab" data-tab="pomodoro">番茄钟</button>
+          <button class="tab" data-tab="papers">论文</button>
+          <button class="tab" data-tab="ailog">AI 对话</button>
+          <button class="tab" data-tab="settings">设置</button>
+        </nav>
+        <div class="topbar-right">
+          <button class="btn sm ghost" id="btnCollapse2" title="收起到胶囊">收起</button>
+          <button class="icon-btn" id="btnTheme" title="切换主题">◑</button>
+        </div>
+      </header>
+
+      <main id="content" class="content">
+        <div class="view" id="view-home" data-view="home"></div>
+        <div class="view" id="view-todo" data-view="todo" hidden></div>
+        <div class="view" id="view-notes" data-view="notes" hidden></div>
+        <div class="view" id="view-links" data-view="links" hidden></div>
+        <div class="view" id="view-pomodoro" data-view="pomodoro" hidden></div>
+        <div class="view" id="view-papers" data-view="papers" hidden></div>
+        <div class="view" id="view-ailog" data-view="ailog" hidden></div>
+        <div class="view" id="view-settings" data-view="settings" hidden></div>
+      </main>
+    </section>
+  </div>
+
+  <script src="lib/markdown.js"></script>
+  <script src="lib/util.js"></script>
+  <script src="views/home.js"></script>
+  <script src="views/todo.js"></script>
+  <script src="views/notes.js"></script>
+  <script src="views/links.js"></script>
+  <script src="views/pomodoro.js"></script>
+  <script src="views/papers.js"></script>
+  <script src="views/ailog.js"></script>
+  <script src="views/settings.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
