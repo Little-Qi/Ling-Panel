@@ -139,6 +139,11 @@
         notify: async (p) => console.log('[notify]', p),
         version: async () => '0.2.0-fallback',
       },
+      activity: {
+        summary: async () => ({ date: '', workMs: 0, readChars: 0, topApp: '', apps: {} }),
+        addRead: async () => ({}),
+        addWrite: async () => ({}),
+      },
       events: {
         on: (channel, handler) => {
           listeners[channel] = listeners[channel] || [];
@@ -191,6 +196,15 @@
 
       this.ready = true;
       await this.refreshBadge();
+      this.startCapsuleLife();
+    },
+
+    startCapsuleLife() {
+      if (this._lifeTimer) clearInterval(this._lifeTimer);
+      // 收起态每隔一段时间轻轻换一句，保持新鲜感
+      this._lifeTimer = setInterval(() => {
+        if (this.mode === 'compact') this.updateCompactSummary();
+      }, 75000);
     },
 
     applyTheme(theme) {
@@ -204,13 +218,69 @@
     async updateCompactSummary() {
       const label = document.getElementById('capsuleLabel');
       const sub = document.getElementById('capsuleSub');
-      if (label) label.textContent = '灵动面板';
+      const life = globalThis.CapsuleLife;
       let open = 0;
+      let settings = {};
+      let stats = null;
+      try {
+        settings = (await window.ling.store.get('settings')) || {};
+      } catch (_) {}
       try {
         const todos = await window.ling.todo.list();
         open = (todos || []).filter((t) => t.status !== 'done').length;
       } catch (_) {}
-      if (sub) sub.textContent = open > 0 ? `待办 ${open}` : '点击展开';
+      try {
+        stats = (await window.ling.activity.summary()) || null;
+      } catch (_) {}
+
+      this.applyMood(life ? life.timeBucket() : 'day');
+
+      if (!life || settings.capsuleAlive === false) {
+        if (label) label.textContent = 'LING';
+        if (sub) sub.textContent = open > 0 ? `待办 ${open}` : '点击展开';
+        return;
+      }
+
+      if (!this._lifeBag) this._lifeBag = {};
+      const celebrate = open === 0 && this._hadOpenTodos === true;
+      this._hadOpenTodos = open > 0;
+
+      const line = life.pickLine({
+        now: new Date(),
+        stats,
+        openTodos: open,
+        celebrate,
+        idle: stats && stats.workMs === 0 && open === 0,
+        seedBag: this._lifeBag,
+        // 约 20% 诗句可在设置关掉
+        poemEnabled: settings.capsulePoem !== false,
+      });
+
+      // 关闭诗句时过滤 poem 类，重选软/数据
+      let text = line.text;
+      if (settings.capsulePoem === false && line.kind === 'poem') {
+        text = life.replaceTokens(
+          (life.SoftLines[line.mood] || life.SoftLines.day)[
+            Math.floor(Math.random() * (life.SoftLines[line.mood] || life.SoftLines.day).length)
+          ],
+          { ...stats, openTodos: open }
+        );
+      }
+
+      if (label) label.textContent = line.kind === 'celebrate' ? '妥了' : 'LING';
+      if (sub) {
+        sub.classList.remove('capsule-sub-enter');
+        void sub.offsetWidth;
+        sub.textContent = text;
+        sub.classList.add('capsule-sub-enter');
+      }
+    },
+
+    applyMood(mood) {
+      const m = (globalThis.CapsuleLife && globalThis.CapsuleLife.Moods[mood]) || null;
+      document.body.dataset.mood = mood || 'day';
+      const breathe = (m && m.breathe) || '2.4s';
+      document.documentElement.style.setProperty('--capsule-breathe', breathe);
     },
 
     showCompact() {

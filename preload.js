@@ -64,6 +64,11 @@ contextBridge.exposeInMainWorld('ling', {
     notify: (payload) => ipcRenderer.invoke('app:notify', payload),
     version: () => ipcRenderer.invoke('app:version'),
   },
+  activity: {
+    summary: () => ipcRenderer.invoke('activity:summary'),
+    addRead: (n) => ipcRenderer.invoke('activity:add-read', n),
+    addWrite: (n) => ipcRenderer.invoke('activity:add-write', n),
+  },
   ai: {
     sessions: () => ipcRenderer.invoke('ai:sessions'),
     createSession: (title) => ipcRenderer.invoke('ai:create-session', title),
@@ -90,6 +95,7 @@ contextBridge.exposeInMainWorld('ling', {
         'panel:orient',
         'clipboard:changed',
         'clipboard:archived',
+        'activity:updated',
       ]);
       if (!allowed.has(channel)) return () => {};
       const listener = (_event, payload) => handler(payload);

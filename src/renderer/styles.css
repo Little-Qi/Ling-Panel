@@ -231,6 +231,61 @@ body[data-mode="expanded"] #expanded {
   text-overflow: ellipsis;
   max-width: 100%;
   margin-top: 1px;
+  transition: color 0.35s ease;
+}
+
+.capsule-sub-enter {
+  animation: capsuleLineIn 0.55s var(--ease) both;
+}
+
+@keyframes capsuleLineIn {
+  0% {
+    opacity: 0;
+    transform: translateY(3px);
+    filter: blur(1px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+    filter: blur(0);
+  }
+}
+
+.capsule-dot {
+  animation-duration: var(--capsule-breathe, 2.4s);
+}
+
+/* 时段氛围：色温与呼吸随时间变化 */
+body[data-mood='dawn'] .capsule {
+  background: linear-gradient(145deg, #2a2438 0%, #1a1c30 55%, #141824 100%);
+}
+body[data-mood='dawn'] .capsule-dot {
+  background: radial-gradient(circle at 32% 30%, #ffe8c8 0%, #f0b48a 50%, #7b8cff 100%);
+  box-shadow: 0 0 12px rgba(240, 180, 138, 0.45);
+}
+body[data-mood='day'] .capsule {
+  background: linear-gradient(145deg, #1a2340 0%, #121a2e 55%, #0f1a28 100%);
+}
+body[data-mood='afternoon'] .capsule {
+  background: linear-gradient(145deg, #1c2a38 0%, #132028 55%, #0e1a22 100%);
+}
+body[data-mood='afternoon'] .capsule-dot {
+  background: radial-gradient(circle at 32% 30%, #d8f3ff 0%, #7b8cff 55%, #2dd4bf 100%);
+}
+body[data-mood='dusk'] .capsule {
+  background: linear-gradient(145deg, #2c2030 0%, #1c1828 55%, #141220 100%);
+}
+body[data-mood='dusk'] .capsule-dot {
+  background: radial-gradient(circle at 32% 30%, #ffd9c0 0%, #c5ceff 55%, #7b8cff 100%);
+  box-shadow: 0 0 14px rgba(255, 170, 120, 0.35);
+}
+body[data-mood='night'] .capsule {
+  background: linear-gradient(145deg, #12182a 0%, #0c121c 55%, #080c14 100%);
+}
+body[data-mood='night'] .capsule-dot {
+  background: radial-gradient(circle at 32% 30%, #c8d4ff 0%, #5c6cff 55%, #2aa89a 100%);
+  box-shadow: 0 0 10px rgba(90, 110, 255, 0.35);
+  animation-duration: var(--capsule-breathe, 3.2s);
 }
 
 .capsule-chevron {

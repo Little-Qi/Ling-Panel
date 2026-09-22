@@ -217,6 +217,18 @@
         settings.clipboardNotify === true,
         (v) => saveSettings({ clipboardNotify: v })
       ),
+      switchRow(
+        '胶囊活化文案',
+        '按时段、净工作时长、摘录字量轮换软问候（推荐开）',
+        settings.capsuleAlive !== false,
+        (v) => saveSettings({ capsuleAlive: v })
+      ),
+      switchRow(
+        '偶尔来一句短诗',
+        '在问候之间点缀一句人话；关掉则只保留状态与数据',
+        settings.capsulePoem !== false,
+        (v) => saveSettings({ capsulePoem: v })
+      ),
     ]);
 
     const workflow = el('div', { class: 'card' }, [

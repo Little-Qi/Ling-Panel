@@ -13,6 +13,7 @@ const { startNotifyServer } = require('./src/main/notify-server');
 const paperLib = require('./src/main/paper-lib');
 const aiLog = require('./src/main/ai-log');
 const clipNotify = require('./src/main/clip-notify');
+const activityTracker = require('./src/main/activity-tracker');
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -21,6 +22,7 @@ if (!gotLock) {
   const store = new Store();
   let panel = null;
   let notifyServer = null;
+  const activity = new activityTracker.ActivityTracker({ store });
 
   function uid(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -247,6 +249,10 @@ if (!gotLock) {
 
     ipcMain.handle('note:list', () => store.getSection('notes') || []);
     ipcMain.handle('note:create', (_e, payload) => {
+      try {
+        const len = String((payload && (payload.content || payload.title)) || '').length;
+        if (len) activity.addWriteChars(len);
+      } catch (_) {}
       const notes = store.getSection('notes') || [];
       const item = {
         id: uid('note'),
@@ -445,6 +451,10 @@ if (!gotLock) {
       }
     });
     ipcMain.handle('ai:detect-paper-ref', (_e, text) => detectPaperRef(text));
+
+    ipcMain.handle('activity:summary', () => activityTracker.summarize(activity.load()));
+    ipcMain.handle('activity:add-read', (_e, n) => activityTracker.summarize(activity.addReadChars(n)));
+    ipcMain.handle('activity:add-write', (_e, n) => activityTracker.summarize(activity.addWriteChars(n)));
   }
 
   function detectPaperRef(text) {
@@ -478,6 +488,11 @@ if (!gotLock) {
           at: Date.now(),
           paperRef: detectPaperRef(text),
         };
+
+        // 摘录/阅读字量：复制即计入
+        try {
+          activity.addReadChars(String(text).length);
+        } catch (_) {}
 
         // 静默写入待归档收件箱（默认无通知，有空再整理）
         try {
@@ -555,6 +570,7 @@ if (!gotLock) {
 
     registerIpc();
     store.ensureSeed();
+    activity.start();
 
     panel = new PanelWindow(
       store,
