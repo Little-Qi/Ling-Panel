@@ -93,7 +93,7 @@
         el('div', {
           class: 'muted',
           style: 'margin-top:4px',
-          text: '复制静默记录，有空再分流；不必弹通知',
+          text: '复制先放这儿，有空再决定去处',
         }),
         ...(clipInbox || []).slice(0, 4).map((c) => {
           const preview = String(c.content || '').replace(/\s+/g, ' ').trim().slice(0, 70);
@@ -163,7 +163,7 @@
             el('span', { class: 'kbd', text: 'Esc' }),
             document.createTextNode(' 收起'),
           ]),
-          el('div', { class: 'muted', text: '面板默认悬浮，数据仅存本机' }),
+          el('div', { class: 'muted', text: '信息只留在你的电脑里' }),
         ]),
       ])
     );
@@ -244,7 +244,7 @@
         el('div', {
           class: 'muted',
           style: 'line-height:1.6',
-          text: '本地 JSON 文件，无账号无云同步。设置里可导出/导入。',
+          text: '内容都在本机，不上传。',
         }),
         el('button', {
           class: 'btn sm',
@@ -258,7 +258,7 @@
     bento.appendChild(
       el('div', { class: 'card span-4' }, [
         el('h3', { text: '论文归档' }),
-        el('div', { class: 'muted', text: '扫描源文件夹 PDF，按规范归入文献库。' }),
+        el('div', { class: 'muted', text: '把下载的 PDF 收进文献夹。' }),
         el('button', {
           class: 'btn sm',
           style: 'margin-top:10px',

@@ -69,8 +69,8 @@
     const checked = selected.has(x.id);
     const hints = x._pdfHints || x._defaults || null;
     const hintNote = hints && (hints.title || (hints.year && hints.year !== 'UnknownYear') || hints.venue)
-      ? `PDF 弱解析：${[hints.year && hints.year !== 'UnknownYear' ? hints.year : '', hints.venue || '', hints.title || ''].filter(Boolean).join(' · ')}`
-      : 'PDF 弱解析：未读到元数据，已用文件名默认值';
+      ? `识别到：${[hints.year && hints.year !== 'UnknownYear' ? hints.year : '', hints.venue || '', hints.title || ''].filter(Boolean).join(' · ')}`
+      : '没读到文件信息，先用文件名顶一下';
     return el('div', {
       class: 'item paper-row',
       'data-paper-id': x.id,
@@ -134,13 +134,13 @@
       ]),
       el('div', { class: 'field' }, [
         el('label', { text: '标题' }),
-        el('input', { class: 'input', 'data-field': 'title', value: x.title, placeholder: '弱解析默认标题，可改' }),
+        el('input', { class: 'input', 'data-field': 'title', value: x.title, placeholder: '标题可改' }),
       ]),
       el('div', { class: 'row', style: 'gap:8px;align-items:center;flex-wrap:wrap' }, [
         el('span', { class: 'muted', style: 'flex:1;min-width:160px;font-size:12px', text: hintNote }),
         el('button', {
           class: 'btn sm',
-          text: '重新弱解析填默认',
+          text: '从文件重新识别',
           onclick: async () => {
             try {
               const h = await window.ling.paper.pdfHints(x.sourcePath);
@@ -182,7 +182,7 @@
 
     if (activeSub === 'ignored') {
       if (!lastIgnored.length) {
-        host.appendChild(el('div', { class: 'empty', text: '忽略列表为空。点条目上的「忽略」可加入。' }));
+        host.appendChild(el('div', { class: 'empty', text: '还没有要忽略的。' }));
         return;
       }
       const list = el('div', { class: 'list' });
@@ -214,7 +214,7 @@
 
     // lib
     if (!lastLib.length) {
-      host.appendChild(el('div', { class: 'empty', text: '点「刷新库」读取 D:\\paper' }));
+      host.appendChild(el('div', { class: 'empty', text: '点「刷新库」看看文献夹' }));
       return;
     }
     const q = el('input', {

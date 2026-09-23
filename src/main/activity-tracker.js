@@ -1,10 +1,10 @@
 /**
  * 本机工作量：净工作时长（键鼠活跃）、软件使用时长、阅读/摘录字量。
- * 仅本地统计，不上传。可在 node:test 中用注入时钟/前台探测单测。
+ * 附带 24 小时分布与近 14 天摘要，供「节律」页可视化。仅本地，不上传。
  */
-const fs = require('fs');
-const path = require('path');
 const { spawn } = require('child_process');
+
+const HISTORY_LIMIT = 14;
 
 function dayKey(d = new Date()) {
   const y = d.getFullYear();
@@ -13,33 +13,72 @@ function dayKey(d = new Date()) {
   return `${y}-${m}-${day}`;
 }
 
+function emptyHours() {
+  return Array.from({ length: 24 }, () => 0);
+}
+
 function emptyDay(date = dayKey()) {
   return {
     date,
     workMs: 0,
     readChars: 0,
     apps: {},
+    hours: emptyHours(),
     updatedAt: Date.now(),
   };
 }
 
-/** 跨天滚动：只保留当天 */
+function normalizeDay(stats, date) {
+  const hours = emptyHours();
+  if (stats && Array.isArray(stats.hours)) {
+    for (let i = 0; i < 24; i++) hours[i] = Number(stats.hours[i]) || 0;
+  }
+  return {
+    date: date || (stats && stats.date) || dayKey(),
+    workMs: Number(stats && stats.workMs) || 0,
+    readChars: Number(stats && stats.readChars) || 0,
+    apps: stats && stats.apps && typeof stats.apps === 'object' ? { ...stats.apps } : {},
+    hours,
+    updatedAt: Number(stats && stats.updatedAt) || Date.now(),
+  };
+}
+
+function normalizeHistory(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((d) => normalizeDay(d, d && d.date))
+    .filter((d) => d.date)
+    .slice(-HISTORY_LIMIT);
+}
+
+/** 跨天：把旧日归档进 history，重开当天 */
 function rollDay(stats, now = new Date()) {
   const key = dayKey(now);
-  if (!stats || stats.date !== key) return emptyDay(key);
-  return {
-    date: stats.date,
-    workMs: Number(stats.workMs) || 0,
-    readChars: Number(stats.readChars) || 0,
-    apps: stats.apps && typeof stats.apps === 'object' ? { ...stats.apps } : {},
-    updatedAt: Number(stats.updatedAt) || Date.now(),
-  };
+  const history = normalizeHistory(stats && stats.history);
+  if (stats && stats.date === key) {
+    const day = normalizeDay(stats, key);
+    day.history = history.filter((h) => h.date !== key);
+    return day;
+  }
+  if (stats && stats.date) {
+    const prev = normalizeDay(stats, stats.date);
+    history.push(prev);
+    while (history.length > HISTORY_LIMIT) history.shift();
+  }
+  const day = emptyDay(key);
+  day.history = history.filter((h) => h.date !== key);
+  return day;
 }
 
 /** 合并一个采样窗口 */
 function applySample(stats, sample, now = Date.now()) {
-  const next = rollDay(stats, new Date(now));
-  if (sample.activeMs) next.workMs += Math.max(0, sample.activeMs);
+  const when = new Date(now);
+  const next = rollDay(stats, when);
+  const hour = when.getHours();
+  if (sample.activeMs) {
+    next.workMs += Math.max(0, sample.activeMs);
+    next.hours[hour] = (next.hours[hour] || 0) + Math.max(0, sample.activeMs);
+  }
   if (sample.readChars) next.readChars += Math.max(0, sample.readChars);
   if (sample.writeChars) next.readChars += Math.max(0, sample.writeChars);
   if (sample.app && sample.appMs) {
@@ -49,17 +88,18 @@ function applySample(stats, sample, now = Date.now()) {
   return next;
 }
 
-function topApp(stats) {
+function topApps(stats, limit = 8) {
   const apps = (stats && stats.apps) || {};
-  let best = null;
-  let bestMs = 0;
-  for (const [name, ms] of Object.entries(apps)) {
-    if (ms > bestMs) {
-      bestMs = ms;
-      best = name;
-    }
-  }
-  return best ? { name: best, ms: bestMs } : null;
+  return Object.entries(apps)
+    .map(([name, ms]) => ({ id: name, name: prettifyApp(name), ms: Number(ms) || 0 }))
+    .filter((a) => a.ms > 0)
+    .sort((a, b) => b.ms - a.ms)
+    .slice(0, limit);
+}
+
+function topApp(stats) {
+  const list = topApps(stats, 1);
+  return list[0] ? { name: list[0].id, ms: list[0].ms } : null;
 }
 
 function summarize(stats) {
@@ -73,6 +113,27 @@ function summarize(stats) {
     topApp: top ? prettifyApp(top.name) : '',
     topAppMs: top ? top.ms : 0,
     apps: s.apps,
+  };
+}
+
+/** 「节律」页数据包：展示当前存储日，不强制滚到系统今天 */
+function insightsPayload(stats) {
+  const today = normalizeDay(stats, stats && stats.date);
+  const history = normalizeHistory(stats && stats.history).filter((h) => h.date !== today.date);
+  const days = [...history, today].slice(-14);
+  return {
+    date: today.date,
+    workMs: today.workMs,
+    workMin: Math.floor(today.workMs / 60000),
+    readChars: today.readChars,
+    hours: today.hours.slice(),
+    apps: topApps(today, 10),
+    days: days.map((d) => ({
+      date: d.date,
+      workMin: Math.floor(d.workMs / 60000),
+      workMs: d.workMs,
+      readChars: d.readChars,
+    })),
   };
 }
 
@@ -155,20 +216,12 @@ public class LingFg {
 }
 
 class ActivityTracker {
-  /**
-   * @param {object} opts
-   *  store: { getSection, setSection }
-   *  getIdleMs: () => number  （默认用 electron powerMonitor）
-   *  probeApp: async () => string
-   *  intervalMs: 采样间隔
-   */
   constructor(opts = {}) {
     this.store = opts.store;
     this.getIdleMs = opts.getIdleMs || defaultIdleMs;
     this.probeApp = opts.probeApp || probeForeground;
     this.intervalMs = opts.intervalMs || 15000;
     this._timer = null;
-    this._saving = false;
   }
 
   load() {
@@ -191,7 +244,6 @@ class ActivityTracker {
     return this.addReadChars(n);
   }
 
-  /** 根据空闲时长折算本采样窗口的净工作毫秒 */
   sampleActive(windowMs) {
     const idleMs = Math.max(0, Number(this.getIdleMs()) || 0);
     let credited;
@@ -208,17 +260,24 @@ class ActivityTracker {
     try {
       app = (await this.probeApp()) || '';
     } catch (_) {}
-    if (app && /^(explorer|ShellExperienceHost|SearchHost|StartMenuExperienceHost)$/i.test(app)) {
-      // 资源管理器/开始菜单不算主力软件
-      app = app === 'explorer' ? 'explorer' : '';
+    if (app && /^(ShellExperienceHost|SearchHost|StartMenuExperienceHost)$/i.test(app)) {
+      app = '';
     }
-    const stats = applySample(this.store.getSection('activity'), {
-      activeMs: credited,
-      app: app || undefined,
-      appMs: credited,
-    }, now);
+    const stats = applySample(
+      this.store.getSection('activity'),
+      {
+        activeMs: credited,
+        app: app || undefined,
+        appMs: credited,
+      },
+      now
+    );
     this.save(stats);
     return summarize(stats);
+  }
+
+  insights() {
+    return insightsPayload(this.store.getSection('activity'));
   }
 
   start() {
@@ -245,12 +304,16 @@ function defaultIdleMs() {
 }
 
 module.exports = {
+  HISTORY_LIMIT,
   dayKey,
   emptyDay,
+  emptyHours,
   rollDay,
   applySample,
   topApp,
+  topApps,
   summarize,
+  insightsPayload,
   prettifyApp,
   probeForeground,
   ActivityTracker,

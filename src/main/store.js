@@ -33,6 +33,8 @@ const DEFAULTS = {
     clipboardNotify: false,
     capsuleAlive: true,
     capsulePoem: true,
+    showInsights: true,
+    insightsTargetMin: 240,
     firstRunDone: false,
   },
   activity: {
@@ -40,6 +42,8 @@ const DEFAULTS = {
     workMs: 0,
     readChars: 0,
     apps: {},
+    hours: [],
+    history: [],
   },
   workflows: [
     { id: 'today', name: '今天', color: '#6C8CFF' },

@@ -66,6 +66,7 @@ contextBridge.exposeInMainWorld('ling', {
   },
   activity: {
     summary: () => ipcRenderer.invoke('activity:summary'),
+    insights: () => ipcRenderer.invoke('activity:insights'),
     addRead: (n) => ipcRenderer.invoke('activity:add-read', n),
     addWrite: (n) => ipcRenderer.invoke('activity:add-write', n),
   },
@@ -75,6 +76,7 @@ contextBridge.exposeInMainWorld('ling', {
     renameSession: (id, title) => ipcRenderer.invoke('ai:rename-session', id, title),
     removeSession: (id) => ipcRenderer.invoke('ai:remove-session', id),
     items: (sessionId) => ipcRenderer.invoke('ai:items', sessionId),
+    reorder: (sessionId, orderedIds) => ipcRenderer.invoke('ai:reorder', sessionId, orderedIds),
     add: (payload) => ipcRenderer.invoke('ai:add', payload),
     remove: (id) => ipcRenderer.invoke('ai:remove', id),
     update: (id, patch) => ipcRenderer.invoke('ai:update', id, patch),

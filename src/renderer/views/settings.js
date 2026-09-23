@@ -68,7 +68,7 @@
         ),
       ]),
       el('div', { class: 'field', style: 'margin-bottom:12px' }, [
-        el('label', { text: '停靠位置（任意屏幕边缘；拖到边缘松手吸附）' }),
+        el('label', { text: '停靠位置' }),
         el(
           'select',
           {
@@ -85,7 +85,7 @@
         ),
       ]),
       el('div', { class: 'field', style: 'margin-bottom:12px' }, [
-        el('label', { text: '所在显示器（拖拽吸附后会记住）' }),
+        el('label', { text: '显示在哪块屏幕' }),
         el('select', {
           class: 'select',
           id: 'dockDisplaySelect',
@@ -97,7 +97,7 @@
       ]),
       el('div', { class: 'form-grid' }, [
         el('div', { class: 'field' }, [
-          el('label', { text: '横向胶囊宽 (px)' }),
+          el('label', { text: '小条宽度' }),
           el('input', {
             class: 'input',
             type: 'number',
@@ -108,7 +108,7 @@
           }),
         ]),
         el('div', { class: 'field' }, [
-          el('label', { text: '横向胶囊高 (px)' }),
+          el('label', { text: '小条高度' }),
           el('input', {
             class: 'input',
             type: 'number',
@@ -119,7 +119,7 @@
           }),
         ]),
         el('div', { class: 'field' }, [
-          el('label', { text: '竖向胶囊宽 (px)' }),
+          el('label', { text: '竖放时宽度' }),
           el('input', {
             class: 'input',
             type: 'number',
@@ -130,7 +130,7 @@
           }),
         ]),
         el('div', { class: 'field' }, [
-          el('label', { text: '竖向胶囊高 (px)' }),
+          el('label', { text: '竖放时高度' }),
           el('input', {
             class: 'input',
             type: 'number',
@@ -141,7 +141,7 @@
           }),
         ]),
         el('div', { class: 'field' }, [
-          el('label', { text: '展开宽度 (px)' }),
+          el('label', { text: '展开后宽度' }),
           el('input', {
             class: 'input',
             type: 'number',
@@ -152,7 +152,7 @@
           }),
         ]),
         el('div', { class: 'field' }, [
-          el('label', { text: '展开高度 (px)' }),
+          el('label', { text: '展开后高度' }),
           el('input', {
             class: 'input',
             type: 'number',
@@ -164,19 +164,19 @@
         ]),
       ]),
       switchRow(
-        '独立悬浮于所有应用',
-        '默认开启；关闭后收起条可能被其他窗口盖住',
+        '一直悬在最前',
+        '收起的小条不会被别的窗口挡住',
         settings.alwaysOnTop !== false && settings.alwaysOnTopWhenDocked !== false,
         async (v) => saveSettings({ alwaysOnTop: v, alwaysOnTopWhenDocked: v })
       ),
       switchRow(
         '贴边自动隐藏',
-        '收起后滑入屏幕边缘，鼠标移到该边缘再弹出',
+        '收起后滑入屏幕边缘，靠近再弹出',
         settings.edgeAutoHide !== false,
         (v) => saveSettings({ edgeAutoHide: v })
       ),
       el('div', { class: 'field', style: 'margin:8px 0 4px' }, [
-        el('label', { text: '离开多久后贴边隐藏（毫秒）' }),
+        el('label', { text: '离开多久后收进边缘（毫秒）' }),
         el('input', {
           class: 'input',
           type: 'number',
@@ -188,53 +188,65 @@
         }),
       ]),
       switchRow(
-        '失焦后自动收起',
-        '默认关。开启后点到其他应用会收回胶囊',
+        '点到别处就收起',
+        '切到其他应用时，自动回到小胶囊',
         settings.autoCollapseOnBlur === true,
         (v) => saveSettings({ autoCollapseOnBlur: v })
       ),
       switchRow(
-        '输入时暂停置顶',
-        '打字时临时让出置顶，避免输入法候选被挡（推荐开）',
+        '打字时让开输入法',
+        '打字时暂时不挡候选词',
         settings.pauseTopmostOnInput !== false,
         (v) => saveSettings({ pauseTopmostOnInput: v })
       ),
       switchRow(
-        'AI 完成提醒',
-        '监听本机 codex/claude/gpt 完成事件（默认关）',
+        '助手完成时提醒我',
+        'Codex / Claude 等本地工具跑完时弹一下',
         settings.enableAiNotify === true,
         (v) => saveSettings({ enableAiNotify: v })
       ),
       switchRow(
-        '剪贴板静默记录',
-        '复制自动进「待归档」收件箱，不打扰；有空再整理（推荐开）',
+        '悄悄记下复制',
+        '复制先收进收件箱，有空再整理',
         settings.clipboardWatch !== false,
         (v) => saveSettings({ clipboardWatch: v })
       ),
       switchRow(
-        '复制时弹系统通知',
-        '默认关。打开后复制会弹 Windows 通知，可点按钮立刻归档',
+        '复制时弹一下通知',
+        '立刻决定存到哪里；平时可关掉',
         settings.clipboardNotify === true,
         (v) => saveSettings({ clipboardNotify: v })
       ),
       switchRow(
-        '胶囊活化文案',
-        '按时段、净工作时长、摘录字量轮换软问候（推荐开）',
+        '小条会说人话',
+        '按时段和今日节奏轻轻问候你',
         settings.capsuleAlive !== false,
         (v) => saveSettings({ capsuleAlive: v })
       ),
       switchRow(
         '偶尔来一句短诗',
-        '在问候之间点缀一句人话；关掉则只保留状态与数据',
+        '多一点诗意，少一点机械',
         settings.capsulePoem !== false,
         (v) => saveSettings({ capsulePoem: v })
+      ),
+      switchRow(
+        '看看今日节律',
+        '在页签里看见自己的工作节奏',
+        settings.showInsights !== false,
+        async (v) => {
+          await saveSettings({ showInsights: v });
+          if (window.App && window.App.applyInsightsTab) window.App.applyInsightsTab(v);
+          if (!v && window.App && window.App.currentTab === 'insights') {
+            await window.App.go('home');
+          }
+        }
       ),
     ]);
 
     const workflow = el('div', { class: 'card' }, [
-      el('h3', { text: '本机与唤出' }),
+      el('h3', { text: '顺手一点' }),
       el('div', { class: 'field', style: 'margin-bottom:12px' }, [
-        el('label', { text: '默认展开页' }),
+        el('label', { text: '打开时先看哪一页' }),
         el(
           'select',
           {
@@ -258,55 +270,63 @@
           )
         ),
       ]),
-      el('div', { class: 'muted', text: '全局快捷键：Alt + Space（展开/收起）' }),
-      el('div', { class: 'muted', text: '收起：Esc / 顶栏「收起」/ 点击面板外区域' }),
-      el('div', {
-        class: 'muted',
-        text: 'AI 提醒默认关闭；开启后：POST http://127.0.0.1:43822/notify/{source}',
-      }),
+      el('div', { class: 'muted', text: 'Alt + Space 展开或收起 · Esc 收起' }),
+      el('div', { class: 'form-grid', style: 'margin-top:10px' }, [
+        el('div', { class: 'field' }, [
+          el('label', { text: '今日专注目标（分钟）' }),
+          el('input', {
+            class: 'input',
+            type: 'number',
+            min: '30',
+            max: '720',
+            value: String(settings.insightsTargetMin || 240),
+            onchange: (e) => saveSettings({ insightsTargetMin: Number(e.target.value) || 240 }),
+          }),
+        ]),
+      ]),
       el('div', { class: 'muted', style: 'margin-top:8px', text: `版本 ${version}` }),
       el('div', {
         class: 'muted',
         id: 'dataPathHint',
         style: 'margin-top:4px',
-        text: '正在读取数据目录…',
+        text: '…',
       }),
       el('div', { class: 'row', style: 'margin-top:10px;flex-wrap:wrap' }, [
         el('button', {
           class: 'btn sm',
-          text: '打开数据目录',
+          text: '打开数据文件夹',
           onclick: async () => {
             await window.ling.store.openDataDir();
           },
         }),
         el('button', {
           class: 'btn sm',
-          text: '导出 workspace.json',
+          text: '备份',
           onclick: async () => {
             const r = await window.ling.store.exportWorkspace();
             window.ling.app.notify({
-              title: r.ok ? '已导出' : '导出失败',
-              message: r.ok ? r.path : r.error || '',
+              title: r.ok ? '已备份' : '备份失败',
+              message: r.ok ? '文件已保存' : r.error || '',
             });
           },
         }),
         el('button', {
           class: 'btn sm',
-          text: '导入 workspace.json',
+          text: '恢复',
           onclick: async () => {
-            if (!confirm('导入会覆盖当前待办/笔记等数据，继续？')) return;
+            if (!confirm('恢复会覆盖当前待办和笔记，继续吗？')) return;
             const r = await window.ling.store.importWorkspace();
             window.ling.app.notify({
-              title: r.ok ? '已导入，建议重启应用' : '导入失败',
-              message: r.ok ? r.path : r.error || '',
+              title: r.ok ? '已恢复，建议重开一次' : '恢复失败',
+              message: r.ok ? '' : r.error || '',
             });
           },
         }),
         el('button', {
           class: 'btn danger',
-          text: '重置全部本地数据',
+          text: '清空重来',
           onclick: async () => {
-            if (!confirm('确定重置工作区？此操作不可恢复。')) return;
+            if (!confirm('会清空全部待办、笔记和设置，确定吗？')) return;
             await window.ling.store.reset();
             window.location.reload();
           },
@@ -315,26 +335,26 @@
     ]);
 
     const paperCard = el('div', { class: 'card', id: 'paper-paths' }, [
-      el('h3', { text: '论文归档路径' }),
+      el('h3', { text: '论文收纳' }),
       el('div', {
         class: 'muted',
         style: 'margin-bottom:10px',
-        text: '可自定义源文件夹与目标库目录，便于分发给他人使用。',
+        text: '下载目录里的 PDF，归进你的文献夹。',
       }),
       el('div', { class: 'field', style: 'margin-bottom:10px' }, [
-        el('label', { text: '源文件夹（扫描的 PDF 来源）' }),
+        el('label', { text: '从哪个文件夹找 PDF' }),
         el('input', {
           class: 'input',
           id: 'paperDownloadsDir',
           value: settings.downloadsDir || '',
-          placeholder: '例如 D:\\Downloads 或 C:\\Users\\you\\Downloads',
+          placeholder: '例如 D:\\Downloads',
           onchange: async (e) => {
             await saveSettings({ downloadsDir: e.target.value.trim() });
           },
         }),
       ]),
       el('div', { class: 'field', style: 'margin-bottom:10px' }, [
-        el('label', { text: '目标库根目录（归档到这里）' }),
+        el('label', { text: '归到哪个文件夹' }),
         el('input', {
           class: 'input',
           id: 'paperRoot',
@@ -356,18 +376,18 @@
           [
             el('option', {
               value: 'copy',
-              text: '复制（源文件保留）',
+              text: '复制（原文件还在下载夹）',
               selected: (settings.paperArchiveMode || 'copy') === 'copy' ? 'selected' : null,
             }),
             el('option', {
               value: 'move',
-              text: '移动（源文件移走）',
+              text: '移走（下载夹不再保留）',
               selected: settings.paperArchiveMode === 'move' ? 'selected' : null,
             }),
           ]
         ),
       ]),
-      el('div', { class: 'muted', text: '主题目录 01…10 会在目标根目录下自动创建/复用。' }),
+      el('div', { class: 'muted', text: '会按主题自动分好文件夹。' }),
     ]);
 
     const grid = el('div', { class: 'col', style: 'gap:12px' });
@@ -379,7 +399,7 @@
         const p = await window.ling.store.paths();
         const hint = document.getElementById('dataPathHint');
         if (hint && p) {
-          hint.textContent = `工作区文件：${p.workspaceFile}`;
+          hint.textContent = `数据在这里：${p.workspaceFile}`;
         }
         const sel = document.getElementById('dockDisplaySelect');
         if (sel) {

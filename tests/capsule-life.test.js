@@ -17,7 +17,7 @@ test('timeBucket covers full day', () => {
 });
 
 test('replaceTokens formats work and read stats', () => {
-  const text = CapsuleLife.replaceTokens('净工作 {workMin} · 摘录 {readChars} · 还剩 {openTodos}', {
+  const text = CapsuleLife.replaceTokens('专注 {workMin} · 读写 {readChars} · 还剩 {openTodos}', {
     workMs: 95 * 60000,
     readChars: 1280,
     openTodos: 3,
@@ -63,6 +63,7 @@ test('activity applySample rolls across days', () => {
   );
   assert.strictEqual(day1.workMs, 60000);
   assert.strictEqual(day1.apps.Code, 60000);
+  assert.strictEqual(day1.hours[12], 60000);
 
   const day2 = activity.applySample(day1, { activeMs: 1000 }, new Date('2026-01-02T09:00:00').getTime());
   assert.strictEqual(day2.date, '2026-01-02');

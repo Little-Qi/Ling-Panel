@@ -82,7 +82,38 @@ function listItems(root, sessionId) {
   const db = loadAiLog(root);
   let items = db.items;
   if (sessionId) items = items.filter((it) => it.sessionId === sessionId);
-  return items;
+  return items
+    .slice()
+    .sort((a, b) => {
+      const oa = Number.isFinite(a.order) ? a.order : a.createdAt;
+      const ob = Number.isFinite(b.order) ? b.order : b.createdAt;
+      return oa - ob || (a.createdAt || 0) - (b.createdAt || 0);
+    });
+}
+
+/** 按展示顺序（自上而下）写回会话内条目 */
+function reorderItems(root, sessionId, orderedIds) {
+  const db = loadAiLog(root);
+  const ids = (orderedIds || []).map(String);
+  const inSess = db.items.filter((it) => it.sessionId === sessionId);
+  const map = new Map(inSess.map((it) => [it.id, it]));
+  const next = [];
+  ids.forEach((id, i) => {
+    const it = map.get(id);
+    if (it) {
+      it.order = i;
+      next.push(it);
+      map.delete(id);
+    }
+  });
+  for (const it of map.values()) {
+    it.order = next.length;
+    next.push(it);
+  }
+  const others = db.items.filter((it) => it.sessionId !== sessionId);
+  db.items = others.concat(next);
+  saveAiLog(root, db);
+  return next;
 }
 
 /** 会话下最后一条的 role，用于建议下一条是 Q 还是 A */
@@ -131,6 +162,7 @@ function addItem(root, { sessionId, role, content, title, source, autoTitle }) {
     content: text,
     source: source === 'clipboard' ? 'clipboard' : 'manual',
     createdAt: Date.now(),
+    order: db.items.filter((x) => x.sessionId === sessId).length,
   };
   db.items.push(item);
   const sess = db.sessions.find((s) => s.id === sessId);
@@ -172,6 +204,7 @@ module.exports = {
   removeSession,
   listSessions,
   listItems,
+  reorderItems,
   addItem,
   removeItem,
   updateItem,

@@ -60,6 +60,18 @@ test('updateItem can flip role', () => {
   assert.strictEqual(updated.role, 'a');
 });
 
+test('reorderItems persists display order', () => {
+  const { loadAiLog, saveAiLog, addItem, listItems, reorderItems } = require('../src/main/ai-log');
+  const root = path.join(os.tmpdir(), `ling-ai-reorder-${Date.now()}`);
+  fs.mkdirSync(root, { recursive: true });
+  const a = addItem(root, { sessionId: 's1', role: 'q', content: 'A' }).item;
+  const b = addItem(root, { sessionId: 's1', role: 'a', content: 'B' }).item;
+  const c = addItem(root, { sessionId: 's1', role: 'q', content: 'C' }).item;
+  assert.deepStrictEqual(listItems(root, 's1').map((x) => x.id), [a.id, b.id, c.id]);
+  reorderItems(root, 's1', [c.id, a.id, b.id]);
+  assert.deepStrictEqual(listItems(root, 's1').map((x) => x.id), [c.id, a.id, b.id]);
+});
+
 test('removeSession drops its items', () => {
   const root = tmpRoot();
   const s = aiLog.createSession(root, 'gone');

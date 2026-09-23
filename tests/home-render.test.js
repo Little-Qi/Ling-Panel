@@ -204,7 +204,7 @@ test('HomeView.render with empty clips does not throw', async () => {
   assert.ok(root.childNodes.length > 0);
   const text = root.textContent;
   assert.match(text, /剪贴板待归档/);
-  assert.match(text, /静默/);
+  assert.match(text, /复制先放这儿/);
 });
 
 test('HomeView.render with non-empty clips does not throw (was broken path)', async () => {

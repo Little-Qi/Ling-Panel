@@ -7,6 +7,7 @@
     pomodoro: () => window.PomodoroView,
     papers: () => window.PapersView,
     ailog: () => window.AiLogView,
+    insights: () => window.InsightsView,
     settings: () => window.SettingsView,
   };
 
@@ -141,6 +142,7 @@
       },
       activity: {
         summary: async () => ({ date: '', workMs: 0, readChars: 0, topApp: '', apps: {} }),
+        insights: async () => ({ date: '', workMs: 0, workMin: 0, readChars: 0, hours: [], apps: [], days: [] }),
         addRead: async () => ({}),
         addWrite: async () => ({}),
       },
@@ -181,6 +183,7 @@
       try {
         const settings = await window.ling.store.get('settings');
         this.applyTheme(settings && settings.theme);
+        this.applyInsightsTab(!settings || settings.showInsights !== false);
         const dock = (settings && settings.dock) || 'top-center';
         this.applyOrient(dock === 'left-edge' || dock === 'right-edge');
         await this.updateCompactSummary();
@@ -209,6 +212,20 @@
 
     applyTheme(theme) {
       document.body.dataset.theme = theme || 'aurora';
+    },
+
+    applyInsightsTab(show) {
+      const tab = document.getElementById('tabInsights');
+      if (tab) tab.hidden = show === false;
+    },
+
+    async syncInsightsTab() {
+      try {
+        const settings = (await window.ling.store.get('settings')) || {};
+        this.applyInsightsTab(settings.showInsights !== false);
+      } catch (_) {
+        this.applyInsightsTab(true);
+      }
     },
 
     applyOrient(vertical) {
@@ -339,6 +356,14 @@
     },
 
     async go(tab, arg) {
+      // 串行渲染，避免收起/展开连点导致同一视图叠加两份 DOM
+      const prev = this._goLock || Promise.resolve();
+      const task = prev.catch(() => {}).then(() => this._renderView(tab, arg));
+      this._goLock = task.catch(() => {});
+      return task;
+    },
+
+    async _renderView(tab, arg) {
       if (!views[tab]) tab = 'home';
       this.currentTab = tab;
       this.viewArg = arg || null;
@@ -644,7 +669,7 @@
         }
 
         body.append(
-          LingUtil.el('div', { class: 'clip-toast-sub', text: '归入 AI 会话 · 标记 Q/A' }),
+          LingUtil.el('div', { class: 'clip-toast-sub', text: '记入 AI 会话' }),
           LingUtil.el('div', { class: 'row', style: 'gap:6px;flex-wrap:wrap;align-items:center' }, [
             LingUtil.el('span', { class: 'muted', text: '会话' }),
             sel,
@@ -748,6 +773,7 @@
 
       on('settings:updated', (settings) => {
         this.applyTheme(settings && settings.theme);
+        this.applyInsightsTab(!settings || settings.showInsights !== false);
         const dock = (settings && settings.dock) || 'top-center';
         this.applyOrient(dock === 'left-edge' || dock === 'right-edge');
       });

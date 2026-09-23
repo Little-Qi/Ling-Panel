@@ -77,12 +77,11 @@
 
   /** 与工作数据相关，{tokens} 运行时替换 */
   const DataLines = [
-    '净工作 {workMin}，节奏刚好',
-    '今天真正在状态 {workMin}',
+    '今天认真了 {workMin}',
     '已陪伴你 {workMin}',
     '鼠标键盘的足迹：{workMin}',
-    '摘录了 {readChars}，眼光很挑',
-    '今天读进 {readChars}，脑子在吸收',
+    '读进 {readChars}，很有眼光',
+    '今天读进 {readChars}',
     '文字里泡了 {readChars}',
     '{readChars} 从眼前流过',
     '常用软件：{topApp}',
@@ -91,9 +90,9 @@
     '还有 {openTodos} 件小事悬着',
     '{openTodos} 件待办，不急着清空',
     '清单上还剩 {openTodos} 条呼吸',
-    '专注累计 {workMin} · 摘录 {readChars}',
+    '专注累计 {workMin} · 读写 {readChars}',
     '{workMin} 的投入 · {readChars} 的痕迹',
-    '今天：{workMin} 在工作，{readChars} 在阅读',
+    '今天：{workMin} 在工作，{readChars} 在读写',
   ];
 
   /** 里程碑 / 庆祝 */

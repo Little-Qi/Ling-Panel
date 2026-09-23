@@ -438,6 +438,7 @@ if (!gotLock) {
     ipcMain.handle('ai:rename-session', (_e, id, title) => aiLog.renameSession(aiRoot(), id, title));
     ipcMain.handle('ai:remove-session', (_e, id) => aiLog.removeSession(aiRoot(), id));
     ipcMain.handle('ai:items', (_e, sessionId) => aiLog.listItems(aiRoot(), sessionId));
+    ipcMain.handle('ai:reorder', (_e, sessionId, orderedIds) => aiLog.reorderItems(aiRoot(), sessionId, orderedIds));
     ipcMain.handle('ai:add', (_e, payload) => aiLog.addItem(aiRoot(), payload));
     ipcMain.handle('ai:remove', (_e, id) => aiLog.removeItem(aiRoot(), id));
     ipcMain.handle('ai:update', (_e, id, patch) => aiLog.updateItem(aiRoot(), id, patch));
@@ -453,6 +454,7 @@ if (!gotLock) {
     ipcMain.handle('ai:detect-paper-ref', (_e, text) => detectPaperRef(text));
 
     ipcMain.handle('activity:summary', () => activityTracker.summarize(activity.load()));
+    ipcMain.handle('activity:insights', () => activity.insights());
     ipcMain.handle('activity:add-read', (_e, n) => activityTracker.summarize(activity.addReadChars(n)));
     ipcMain.handle('activity:add-write', (_e, n) => activityTracker.summarize(activity.addWriteChars(n)));
   }
