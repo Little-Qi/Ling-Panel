@@ -116,27 +116,72 @@
       } catch (_) {}
     }
 
-    // —— 左栏：会话 ——
+    // —— 左栏：会话（可搜索） ——
     const sideHost = el('div', { id: 'aiSideHost' });
     function paintSide(slot) {
       const box = slot || sideHost;
       box.innerHTML = '';
+
+      let query = '';
+      const searchInput = el('input', {
+        class: 'input',
+        type: 'search',
+        placeholder: '搜索会话…',
+        style: 'margin-bottom:8px',
+      });
+
       const list = el('div', { class: 'ai-session-list' });
-      if (!sessions.length) {
-        list.appendChild(el('div', { class: 'muted', style: 'padding:8px', text: '还没有会话' }));
+      const count = el('div', { class: 'muted', style: 'font-size:11px;margin-top:4px' });
+
+      function matches(s, q) {
+        if (!q) return true;
+        const t = String(s.title || '').toLowerCase();
+        return t.includes(q);
       }
-      for (const s of sessions) {
-        list.appendChild(
-          el('button', {
-            class: 'ai-session-item' + (s.id === sid ? ' active' : ''),
-            text: s.title || '未命名',
-            onclick: async () => {
-              sid = s.id;
-              await App.refreshCurrent();
-            },
-          })
-        );
+
+      function paintList() {
+        list.innerHTML = '';
+        const q = query.trim().toLowerCase();
+        const shown = sessions.filter((s) => matches(s, q));
+        // 会话很多时：默认只画前 80 条，搜索后再全量过滤结果
+        const limited = !q && shown.length > 80 ? shown.slice(0, 80) : shown;
+        if (!shown.length) {
+          list.appendChild(
+            el('div', {
+              class: 'muted',
+              style: 'padding:8px',
+              text: sessions.length ? '没有匹配的会话' : '还没有会话',
+            })
+          );
+        }
+        for (const s of limited) {
+          list.appendChild(
+            el('button', {
+              class: 'ai-session-item' + (s.id === sid ? ' active' : ''),
+              text: s.title || '未命名',
+              title: s.title || '',
+              onclick: async () => {
+                sid = s.id;
+                await App.refreshCurrent();
+              },
+            })
+          );
+        }
+        count.textContent = sessions.length
+          ? q
+            ? `${shown.length} / ${sessions.length} 个会话`
+            : shown.length > 80
+              ? `共 ${shown.length} 个，显示最近 80 · 可搜索`
+              : `共 ${shown.length} 个会话`
+          : '';
       }
+
+      searchInput.addEventListener('input', (e) => {
+        query = e.target.value || '';
+        paintList();
+      });
+
+      paintList();
 
       const actions = el('div', { class: 'col', style: 'gap:6px' }, [
         el('div', { class: 'row', style: 'gap:6px;flex-wrap:wrap' }, [
@@ -211,7 +256,9 @@
       box.append(
         el('div', { class: 'card' }, [
           el('h3', { text: '会话' }),
+          searchInput,
           list,
+          count,
           el('div', { style: 'margin-top:8px' }, actions),
         ])
       );

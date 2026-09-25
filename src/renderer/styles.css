@@ -1683,3 +1683,131 @@ body[data-theme='dawn'][data-mood='night'] .capsule {
   outline: 1px dashed rgba(123, 140, 255, 0.55);
   outline-offset: 2px;
 }
+
+/* —— 剪贴板卡片与全量管理 —— */
+.clip-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+.clip-stack-item {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+
+}
+.clip-stack-item.leaving {
+  animation: clipCardOut 0.22s ease forwards;
+}
+.clip-stack-item.leaving-drop {
+  animation: clipCardDrop 0.22s ease forwards;
+}
+
+@keyframes clipCardOut {
+  to {
+    opacity: 0;
+    transform: translateX(12px);
+  }
+}
+@keyframes clipCardDrop {
+  to {
+    opacity: 0;
+  }
+}
+.clip-stack-slot {
+  min-height: 0;
+}
+.clip-stack-item {
+  will-change: auto;
+}
+
+.clip-mgr-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(8, 12, 20, 0.45);
+  z-index: 80;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+
+}
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.clip-mgr-panel {
+  width: min(720px, 100%);
+  max-height: min(80vh, 720px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--bg);
+  border: 1px solid var(--line-strong);
+  border-radius: 16px;
+  padding: 14px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.35);
+
+}
+@keyframes clipMgrIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.clip-mgr-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.clip-mgr-head h3 {
+  margin: 0;
+  margin-right: 4px;
+}
+.clip-mgr-bulk {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: var(--surface);
+}
+.clip-mgr-body {
+  overflow: auto;
+  min-height: 180px;
+  max-height: 48vh;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.clip-mgr-row {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+}
+.clip-mgr-row.selected {
+  border-color: rgba(123, 140, 255, 0.45);
+  background: var(--accent-soft);
+}
+.clip-mgr-check {
+  margin-top: 3px;
+}

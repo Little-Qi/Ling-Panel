@@ -45,6 +45,14 @@ test('store persists section updates', () => {
   assert.strictEqual(notes[0].title, 't');
 });
 
+test('setSection caps unbounded lists', () => {
+  const store = new Store();
+  const many = Array.from({ length: 800 }, (_, i) => ({ id: 'n' + i, title: 't' + i, content: 'c' }));
+  store.setSection('notes', many);
+  const notes = store.getSection('notes');
+  assert.ok(notes.length <= 500, 'notes should be capped at 500');
+});
+
 test('todo-like arrays roundtrip', () => {
   const store = new Store();
   const todos = [{ id: 'a', title: '写测试', status: 'today' }];

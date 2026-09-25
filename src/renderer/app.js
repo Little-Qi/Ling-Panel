@@ -139,6 +139,7 @@
       app: {
         notify: async (p) => console.log('[notify]', p),
         version: async () => '0.2.0-fallback',
+        clipboardWrite: async () => false,
       },
       activity: {
         summary: async () => ({ date: '', workMs: 0, readChars: 0, topApp: '', apps: {} }),

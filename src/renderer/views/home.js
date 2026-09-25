@@ -87,52 +87,112 @@
     );
 
     bento.appendChild(
-      el('div', { class: 'card span-4' }, [
-        el('h3', { text: '剪贴板待归档' }),
-        el('div', { class: 'stat', text: String((clipInbox || []).length) }),
+      el('div', { class: 'card span-4 clip-card' }, [
+        el('div', { class: 'row', style: 'justify-content:space-between;align-items:center;gap:8px' }, [
+          el('h3', { text: '剪贴板' }),
+          el('button', {
+            class: 'btn sm',
+            text: '所有',
+            onclick: () => window.ClipManager && window.ClipManager.open({ tab: 'inbox' }),
+          }),
+        ]),
+        el('div', { class: 'stat', text: String((clipInbox || []).length) + ' 条待处理' }),
         el('div', {
           class: 'muted',
-          style: 'margin-top:4px',
-          text: '复制先放这儿，有空再决定去处',
+          style: 'margin-top:2px',
+          text: '一张一张决定，或点「所有」批量处理',
         }),
-        ...(clipInbox || []).slice(0, 4).map((c) => {
-          const preview = String(c.content || '').replace(/\s+/g, ' ').trim().slice(0, 70);
-          async function settle(action) {
-            const rest = (clipInbox || []).filter((x) => x.id !== c.id);
-            await window.ling.store.set('clipInbox', rest);
-            if (action === 'clip') {
-              const list = (clips || []).slice();
-              list.unshift({ id: 'c_' + Date.now().toString(36), content: c.content, createdAt: Date.now(), kind: 'text' });
-              await window.ling.store.set('clips', list.slice(0, 500));
-            } else if (action === 'note') {
-              await window.ling.note.create({
-                title: preview.slice(0, 32) || '剪贴笔记',
-                content: c.content,
-              });
-            } else if (action === 'ai') {
-              await window.ling.ai.add({
-                role: 'q',
-                content: c.content,
-                source: 'clipboard',
-                autoTitle: true,
-              });
+        el('div', { class: 'clip-stack' }, [
+          ...(clipInbox || []).slice(0, 3).map((c) => {
+            const preview = String(c.content || '').replace(/\s+/g, ' ').trim().slice(0, 70);
+            const cardHost = el('div', { class: 'clip-stack-slot' });
+
+            async function settle(action, row) {
+              // 只动这张卡，避免整页重绘导致闪烁
+              if (row) {
+                row.classList.add(action === 'drop' ? 'leaving-drop' : 'leaving');
+                await new Promise((r) => setTimeout(r, 180));
+              }
+              const rest = (clipInbox || []).filter((x) => x.id !== c.id);
+              await window.ling.store.set('clipInbox', rest);
+              if (action === 'clip') {
+                const list = (clips || []).slice();
+                list.unshift({
+                  id: 'c_' + Date.now().toString(36),
+                  content: c.content,
+                  createdAt: Date.now(),
+                  kind: 'text',
+                });
+                await window.ling.store.set('clips', list.slice(0, 500));
+              } else if (action === 'note') {
+                await window.ling.note.create({
+                  title: preview.slice(0, 32) || '剪贴笔记',
+                  content: c.content,
+                });
+              } else if (action === 'ai') {
+                await window.ling.ai.add({
+                  role: 'q',
+                  content: c.content,
+                  source: 'clipboard',
+                  autoTitle: true,
+                });
+              }
+              if (row && row.parentNode) row.remove();
+              if (cardHost && cardHost.parentNode) cardHost.remove();
+              // 就地更新计数，不整页刷新
+              const stat = document.querySelector('.clip-card .stat');
+              if (stat) stat.textContent = `${rest.length} 条待处理`;
+              const foot = document.querySelector('.clip-card .clip-card-foot');
+              if (foot) foot.textContent = `已收藏片段 ${(clips || []).length + (action === 'clip' ? 1 : 0)}`;
             }
-            await App.refreshCurrent();
-          }
-          return el('div', { class: 'item', style: 'flex-direction:column;align-items:stretch;gap:6px' }, [
-            expandableText(String(c.content || ''), { limit: 60, class: 'expandable-text item-title' }),
-            el('div', { class: 'row', style: 'gap:4px;flex-wrap:wrap' }, [
-              el('button', { class: 'btn sm', text: '片段', onclick: () => settle('clip') }),
-              el('button', { class: 'btn sm', text: '笔记', onclick: () => settle('note') }),
-              el('button', { class: 'btn sm', text: 'AI·Q', onclick: () => settle('ai') }),
-              el('button', { class: 'btn sm ghost', text: '丢弃', onclick: () => settle('drop') }),
-            ]),
-          ]);
-        }),
+
+            const row = el('div', { class: 'clip-stack-item' }, [
+              expandableText(String(c.content || ''), {
+                limit: 56,
+                class: 'expandable-text item-title',
+              }),
+              el('div', { class: 'row', style: 'gap:4px;flex-wrap:wrap' }, [
+                el('button', {
+                  class: 'btn sm ghost',
+                  text: '复制',
+                  onclick: async (e) => {
+                    e.stopPropagation();
+                    const ok =
+                      window.ClipManager && (await window.ClipManager.copyText(c.content));
+                    window.ling.app.notify({
+                      title: ok ? '已复制' : '复制失败',
+                      message: preview.slice(0, 20),
+                    });
+                  },
+                }),
+                el('button', {
+                  class: 'btn sm primary',
+                  text: '片段',
+                  onclick: () => settle('clip', row),
+                }),
+                el('button', {
+                  class: 'btn sm',
+                  text: '笔记',
+                  onclick: () => settle('note', row),
+                }),
+                el('button', {
+                  class: 'btn sm ghost',
+                  text: '丢弃',
+                  onclick: () => settle('drop', row),
+                }),
+              ]),
+            ]);
+            cardHost.appendChild(row);
+            return cardHost;
+          }),
+          !(clipInbox || []).length
+            ? el('div', { class: 'empty', style: 'padding:10px', text: '暂时空闲' })
+            : null,
+        ]),
         el('div', {
-          class: 'muted',
-          style: 'margin-top:6px;font-size:12px',
-          text: `已归档片段 ${ (clips || []).length }`,
+          class: 'muted clip-card-foot',
+          style: 'margin-top:8px;font-size:12px',
+          text: `已收藏片段 ${(clips || []).length}`,
         }),
       ])
     );

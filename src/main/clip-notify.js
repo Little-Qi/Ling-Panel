@@ -61,7 +61,7 @@ function applyArchive(actionId, payload, deps) {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-    store.setSection('notes', notes);
+    store.setSection('notes', notes.slice(0, 500));
     return { ok: true, dest: 'note' };
   }
 
@@ -77,7 +77,7 @@ function applyArchive(actionId, payload, deps) {
       favicon: '',
       createdAt: Date.now(),
     });
-    store.setSection('links', links);
+    store.setSection('links', links.slice(0, 500));
     return { ok: true, dest: 'link' };
   }
 
@@ -93,7 +93,7 @@ function applyArchive(actionId, payload, deps) {
       createdAt: Date.now(),
       updatedAt: Date.now(),
     });
-    store.setSection('todos', todos);
+    store.setSection('todos', todos.slice(0, 500));
     return { ok: true, dest: 'todo' };
   }
 
@@ -145,6 +145,13 @@ function showClipboardSystemNotify(payload, deps) {
   });
 
   n.show();
+  // 通知对象短命，避免长期占着监听
+  setTimeout(() => {
+    try {
+      n.removeAllListeners();
+      n.close();
+    } catch (_) {}
+  }, 20000);
   return true;
 }
 

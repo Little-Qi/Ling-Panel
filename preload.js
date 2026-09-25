@@ -63,6 +63,7 @@ contextBridge.exposeInMainWorld('ling', {
   app: {
     notify: (payload) => ipcRenderer.invoke('app:notify', payload),
     version: () => ipcRenderer.invoke('app:version'),
+    clipboardWrite: (text) => ipcRenderer.invoke('app:clipboard-write', text),
   },
   activity: {
     summary: () => ipcRenderer.invoke('activity:summary'),

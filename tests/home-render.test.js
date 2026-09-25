@@ -203,8 +203,8 @@ test('HomeView.render with empty clips does not throw', async () => {
   await sandbox.HomeView.render(root);
   assert.ok(root.childNodes.length > 0);
   const text = root.textContent;
-  assert.match(text, /剪贴板待归档/);
-  assert.match(text, /复制先放这儿/);
+  assert.match(text, /剪贴板/);
+  assert.match(text, /复制先放这儿|一张一张决定|待处理/);
 });
 
 test('HomeView.render with non-empty clips does not throw (was broken path)', async () => {
@@ -218,7 +218,7 @@ test('HomeView.render with non-empty clips does not throw (was broken path)', as
   const root = document.createElement('div');
   await sandbox.HomeView.render(root);
   const html = root.textContent;
-  assert.match(html, /剪贴板待归档/);
+  assert.match(html, /剪贴板/);
   assert.match(html, /4/);
 });
 

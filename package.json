@@ -1,6 +1,6 @@
 {
   "name": "ling-panel",
-  "version": "0.3.1",
+  "version": "0.3.3",
   "description": "灵动面板 — Windows 优先的贴顶本地工作台：待办、Markdown 笔记、链接、番茄钟",
   "main": "main.js",
   "license": "MIT",

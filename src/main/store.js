@@ -56,11 +56,6 @@ const DEFAULTS = {
   links: [],
   clips: [],
   clipInbox: [],
-  clipInbox: [],
-  clipInbox: [],
-  clipInbox: [],
-  clipInbox: [],
-  clipInbox: [],
   pomodoro: {
     focusMin: 25,
     breakMin: 5,
@@ -148,6 +143,21 @@ function deepMerge(base, patch) {
   return out;
 }
 
+/** 防止列表类数据无限增长，拖垮内存与 workspace.json */
+const CAPS = {
+  todos: 500,
+  notes: 500,
+  links: 500,
+  clips: 500,
+  clipInbox: 300,
+};
+
+function capList(key, list) {
+  const max = CAPS[key];
+  if (!max || !Array.isArray(list)) return list;
+  return list.length > max ? list.slice(0, max) : list;
+}
+
 class Store {
   constructor() {
     this.cache = null;
@@ -183,7 +193,8 @@ class Store {
   }
 
   setSection(key, value) {
-    return this.save({ [key]: value });
+    const capped = capList(key, value);
+    return this.save({ [key]: capped });
   }
 
   reset() {
@@ -228,6 +239,8 @@ module.exports = {
   Store,
   DEFAULTS,
   SEED,
+  CAPS,
+  capList,
   dataDir,
   storePath,
   deepMerge,

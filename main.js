@@ -451,6 +451,16 @@ if (!gotLock) {
         return '';
       }
     });
+    ipcMain.handle('app:clipboard-write', (_e, text) => {
+      try {
+        const { clipboard } = require('electron');
+        clipboard.writeText(String(text || ''), 'clipboard');
+        return true;
+      } catch (err) {
+        console.error('[clipboard] write failed', err);
+        return false;
+      }
+    });
     ipcMain.handle('ai:detect-paper-ref', (_e, text) => detectPaperRef(text));
 
     ipcMain.handle('activity:summary', () => activityTracker.summarize(activity.load()));
@@ -478,7 +488,7 @@ if (!gotLock) {
     try {
       last = clipboard.readText('clipboard') || '';
     } catch (_) {}
-    setInterval(() => {
+    const timer = setInterval(() => {
       try {
         const s = storeRef.getSection('settings') || {};
         if (s.clipboardWatch === false) return;
@@ -556,7 +566,10 @@ if (!gotLock) {
         console.error('[clipboard] watch error', err);
       }
     }, 700);
+    return timer;
   }
+
+  let clipTimer = null;
 
   app.on('second-instance', () => {
     if (panel) {
@@ -581,7 +594,7 @@ if (!gotLock) {
     );
     panel.create({ startExpanded: true });
     registerShortcuts();
-    startClipboardWatch(store);
+    clipTimer = startClipboardWatch(store);
 
     const settings = store.getSection('settings') || {};
     if (settings.enableAiNotify === true || process.env.LING_ENABLE_AI_NOTIFY === '1') {
@@ -602,6 +615,10 @@ if (!gotLock) {
 
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
+    if (clipTimer) clearInterval(clipTimer);
+    try {
+      activity.stop();
+    } catch (_) {}
     if (notifyServer) notifyServer.close();
   });
 

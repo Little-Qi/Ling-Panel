@@ -92,6 +92,13 @@
         node.addEventListener(k.slice(2).toLowerCase(), v);
       } else if (k === 'hidden') {
         node.hidden = !!v;
+      } else if (k === 'checked') {
+        // 布尔属性必须走 property；setAttribute('checked', false) 仍会勾选
+        node.checked = !!v;
+      } else if (k === 'disabled' || k === 'selected' || k === 'multiple' || k === 'readOnly' || k === 'required') {
+        node[k] = !!v;
+      } else if (k === 'value') {
+        node.value = v == null ? '' : String(v);
       } else if (v !== undefined && v !== null) {
         node.setAttribute(k, v);
       }
