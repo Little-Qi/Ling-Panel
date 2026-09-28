@@ -68,85 +68,137 @@
     });
 
     const board = el('div', { class: 'board' });
+    // 已完成默认只露出最近几条，避免越积越长
+    let showAllDone = false;
+    const DONE_PREVIEW = 6;
 
-    for (const wf of workflows) {
-      const colTodos = todos
-        .filter((t) => t.status === wf.id)
-        .sort((a, b) => (a.dueAt || 0) - (b.dueAt || 0));
+    function renderBoard() {
+      board.innerHTML = '';
+      for (const wf of workflows) {
+        const isDoneCol = wf.id === 'done';
+        let colTodos = todos
+          .filter((t) => t.status === wf.id)
+          .sort((a, b) => {
+            if (isDoneCol) {
+              // 已完成：最近完成的在上
+              return (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0);
+            }
+            return (a.dueAt || 0) - (b.dueAt || 0);
+          });
 
-      const col = el('div', { class: 'board-col' }, [
-        el('h4', {}, [
+        const total = colTodos.length;
+        if (isDoneCol && !showAllDone && total > DONE_PREVIEW) {
+          colTodos = colTodos.slice(0, DONE_PREVIEW);
+        }
+
+        const header = el('h4', {}, [
           el('span', { class: 'dot', style: `background:${wf.color}` }),
           el('span', { text: wf.name }),
-          el('span', { class: 'muted', text: String(colTodos.length) }),
-        ]),
-      ]);
+          el('span', { class: 'muted', text: String(total) }),
+        ]);
 
-      const list = el('div', { class: 'list' });
-      if (!colTodos.length) {
-        list.appendChild(el('div', { class: 'empty', style: 'padding:14px 8px', text: '空' }));
-      }
-
-      for (const t of colTodos) {
-        const done = t.status === 'done';
-        const overdue = LingUtil.isOverdue(t.dueAt) && !done;
-
-        const item = el('div', { class: `item${done ? ' done' : ''}` }, [
-          el('input', {
-            type: 'checkbox',
-            style: 'margin-top:3px',
-            checked: done ? 'checked' : null,
-            onchange: async (e) => {
-              const status = e.target.checked ? 'done' : t.status === 'done' ? 'today' : t.status;
-              await window.ling.todo.update(t.id, { status });
+        if (isDoneCol && total > 0) {
+          const clearBtn = el('button', {
+            class: 'btn sm ghost',
+            title: '清空所有已完成',
+            text: '清空',
+            onclick: async () => {
+              if (!confirm(`清空 ${total} 条已完成？`)) return;
+              for (const t of todos.filter((x) => x.status === 'done')) {
+                await window.ling.todo.remove(t.id);
+              }
               await App.refreshCurrent();
             },
-          }),
-          el('div', { class: 'col', style: 'flex:1;min-width:0;gap:4px' }, [
-            el('div', { class: 'item-title', text: t.title }),
-            el('div', {
-              class: 'item-sub',
-              text: LingUtil.dueLabel(t.dueAt) + (t.note ? ` · ${t.note}` : ''),
-            }),
-            el(
-              'div',
-              { class: 'row', style: 'gap:4px;margin-top:2px;flex-wrap:wrap' },
-              workflows
-                .filter((w) => w.id !== t.status)
-                .map((w) =>
-                  el('button', {
-                    class: 'btn sm ghost',
-                    text: `→ ${w.name}`,
-                    onclick: async () => {
-                      await window.ling.todo.update(t.id, { status: w.id });
-                      await App.refreshCurrent();
-                    },
-                  })
-                )
-            ),
-          ]),
-          el('div', { class: 'col', style: 'gap:4px;align-items:flex-end' }, [
-            el('span', {
-              class: `chip ${overdue ? 'red' : done ? 'green' : 'blue'}`,
-              text: overdue ? '逾期' : wf.name,
-            }),
-            el('button', {
-              class: 'btn sm danger',
-              text: '删',
-              onclick: async () => {
-                await window.ling.todo.remove(t.id);
+          });
+          header.appendChild(el('span', { class: 'spacer' }));
+          header.appendChild(clearBtn);
+        }
+
+        const col = el('div', { class: 'board-col' }, [header]);
+        const list = el('div', { class: 'list' });
+        if (!colTodos.length) {
+          list.appendChild(el('div', { class: 'empty', style: 'padding:14px 8px', text: '空' }));
+        }
+
+        for (const t of colTodos) {
+          const done = t.status === 'done';
+          // 已完成不再提示逾期
+          const overdue = !done && LingUtil.isOverdue(t.dueAt);
+          const sub = done
+            ? [t.note ? t.note : '', `${LingUtil.formatTime(t.updatedAt || t.createdAt)} 完成`]
+                .filter(Boolean)
+                .join(' · ')
+            : LingUtil.dueLabel(t.dueAt) + (t.note ? ` · ${t.note}` : '');
+
+          const item = el('div', { class: `item${done ? ' done' : ''}` }, [
+            el('input', {
+              type: 'checkbox',
+              style: 'margin-top:3px',
+              checked: done,
+              onchange: async (e) => {
+                const status = e.target.checked ? 'done' : t.status === 'done' ? 'today' : t.status;
+                await window.ling.todo.update(t.id, { status });
                 await App.refreshCurrent();
               },
             }),
-          ]),
-        ]);
-        list.appendChild(item);
-      }
+            el('div', { class: 'col', style: 'flex:1;min-width:0;gap:4px' }, [
+              el('div', { class: 'item-title', text: t.title }),
+              sub ? el('div', { class: 'item-sub', text: sub }) : null,
+              el(
+                'div',
+                { class: 'row', style: 'gap:4px;margin-top:2px;flex-wrap:wrap' },
+                workflows
+                  .filter((w) => w.id !== t.status)
+                  .map((w) =>
+                    el('button', {
+                      class: 'btn sm ghost',
+                      text: `→ ${w.name}`,
+                      onclick: async () => {
+                        await window.ling.todo.update(t.id, { status: w.id });
+                        await App.refreshCurrent();
+                      },
+                    })
+                  )
+              ),
+            ]),
+            el('div', { class: 'col', style: 'gap:4px;align-items:flex-end' }, [
+              el('span', {
+                class: `chip ${overdue ? 'red' : done ? 'green' : 'blue'}`,
+                text: overdue ? '逾期' : wf.name,
+              }),
+              el('button', {
+                class: 'btn sm danger',
+                text: '删',
+                onclick: async () => {
+                  await window.ling.todo.remove(t.id);
+                  await App.refreshCurrent();
+                },
+              }),
+            ]),
+          ]);
+          list.appendChild(item);
+        }
 
-      col.appendChild(list);
-      board.appendChild(col);
+        if (isDoneCol && total > DONE_PREVIEW) {
+          list.appendChild(
+            el('button', {
+              class: 'btn sm ghost',
+              style: 'width:100%;margin-top:6px',
+              text: showAllDone ? '收起' : `展开其余 ${total - DONE_PREVIEW} 条`,
+              onclick: () => {
+                showAllDone = !showAllDone;
+                renderBoard();
+              },
+            })
+          );
+        }
+
+        col.appendChild(list);
+        board.appendChild(col);
+      }
     }
 
+    renderBoard();
     root.append(quickBar, toolbar, board);
   }
 

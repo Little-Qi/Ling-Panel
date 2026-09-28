@@ -14,6 +14,7 @@ const paperLib = require('./src/main/paper-lib');
 const aiLog = require('./src/main/ai-log');
 const clipNotify = require('./src/main/clip-notify');
 const activityTracker = require('./src/main/activity-tracker');
+const typingCounter = require('./src/main/typing-counter');
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -23,6 +24,8 @@ if (!gotLock) {
   let panel = null;
   let notifyServer = null;
   const activity = new activityTracker.ActivityTracker({ store });
+  let keyHook = null;
+  let keyHookTimer = null;
 
   function uid(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -113,6 +116,22 @@ if (!gotLock) {
       const next = store.setSection(key, value);
       if (key === 'settings' && panel) {
         panel.applySettings(value);
+      }
+      if (key === 'settings') {
+        // 开关全局键数钩子
+        try {
+          const want = !!(value && value.enableKeyHook === true);
+          if (want && !keyHook) {
+            keyHook = typingCounter.startKeyHook(require('./src/main/store').dataDir());
+            console.log('[typing] global key hook on');
+          } else if (!want && keyHook) {
+            keyHook.stop();
+            keyHook = null;
+            console.log('[typing] global key hook off');
+          }
+        } catch (err) {
+          console.error('[typing] toggle hook failed', err && err.message);
+        }
       }
       return next;
     });
@@ -467,6 +486,16 @@ if (!gotLock) {
     ipcMain.handle('activity:insights', () => activity.insights());
     ipcMain.handle('activity:add-read', (_e, n) => activityTracker.summarize(activity.addReadChars(n)));
     ipcMain.handle('activity:add-write', (_e, n) => activityTracker.summarize(activity.addWriteChars(n)));
+    ipcMain.handle('activity:add-typed', (_e, n) => activityTracker.summarize(activity.addTypedChars(n)));
+    ipcMain.handle('activity:flush-typed-keys', () => {
+      try {
+        const d = keyHook ? keyHook.readDelta() : 0;
+        if (d) activity.addTypedKeys(d);
+        return activityTracker.summarize(activity.load());
+      } catch {
+        return activityTracker.summarize(activity.load());
+      }
+    });
   }
 
   function detectPaperRef(text) {
@@ -565,7 +594,7 @@ if (!gotLock) {
       } catch (err) {
         console.error('[clipboard] watch error', err);
       }
-    }, 700);
+    }, 1200);
     return timer;
   }
 
@@ -586,6 +615,40 @@ if (!gotLock) {
     registerIpc();
     store.ensureSeed();
     activity.start();
+
+    // 全局键数钩子：默认关闭，避免杀软误报；开启后才常驻
+    const startKeyHookIfNeeded = () => {
+      const s = store.getSection('settings') || {};
+      const want = s.enableKeyHook === true;
+      if (want && !keyHook) {
+        try {
+          keyHook = typingCounter.startKeyHook(require('./src/main/store').dataDir());
+          console.log('[typing] global key hook on');
+        } catch (err) {
+          console.error('[typing] key hook failed', err && err.message);
+        }
+      } else if (!want && keyHook) {
+        try {
+          keyHook.stop();
+        } catch (_) {}
+        keyHook = null;
+        console.log('[typing] global key hook off');
+      }
+      return want;
+    };
+
+    startKeyHookIfNeeded();
+    keyHookTimer = setInterval(() => {
+      try {
+        if (!keyHook) {
+          startKeyHookIfNeeded();
+          return;
+        }
+        const d = keyHook.readDelta();
+        if (d) activity.addTypedKeys(d);
+      } catch (_) {}
+    }, 8000);
+    keyHookTimer.unref?.();
 
     panel = new PanelWindow(
       store,
@@ -616,6 +679,10 @@ if (!gotLock) {
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     if (clipTimer) clearInterval(clipTimer);
+    if (keyHookTimer) clearInterval(keyHookTimer);
+    try {
+      if (keyHook) keyHook.stop();
+    } catch (_) {}
     try {
       activity.stop();
     } catch (_) {}

@@ -241,6 +241,12 @@
           }
         }
       ),
+      switchRow(
+        '统计全局按键次数',
+        '默认关。系统级键盘钩子，杀软可能提示；只记次数不记内容，可随时关',
+        settings.enableKeyHook === true,
+        (v) => saveSettings({ enableKeyHook: v })
+      ),
     ]);
 
     const workflow = el('div', { class: 'card' }, [

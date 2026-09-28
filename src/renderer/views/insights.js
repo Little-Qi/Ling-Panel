@@ -28,6 +28,12 @@
     return `${String(h).padStart(2, '0')}`;
   }
 
+  function hookOnHint(settings, data) {
+    return settings && settings.enableKeyHook === true
+      ? `按键约 ${Math.max(0, data.typedKeys || 0)} 次`
+      : '应用内字数 · 全局按键可选';
+  }
+
   async function renderInsights(root) {
     root.innerHTML = '';
     root.className = 'view insights';
@@ -65,18 +71,58 @@
         el('div', { class: 'muted', text: '复制与笔记里的字数' }),
       ]),
       el('div', { class: 'card insight-kpi' }, [
-        el('div', { class: 'muted', text: '主力软件' }),
+        el('div', { class: 'muted', text: '手动键入' }),
         el('div', {
           class: 'insight-num',
-          text: data.apps && data.apps[0] ? data.apps[0].name : '—',
+          text: `${Math.max(0, data.typedChars || 0)} 字`,
         }),
         el('div', {
           class: 'muted',
-          text: data.apps && data.apps[0] ? fmtMin(data.apps[0].ms / 60000) : '慢慢就有了',
+          text: hookOnHint(settings, data),
         }),
       ]),
     ]);
     root.appendChild(kpis);
+
+    // 键入专栏：应用内字数 + 全局按键（可选）
+    const hookOn = settings.enableKeyHook === true;
+    root.appendChild(
+      el('div', { class: 'card' }, [
+        el('h3', { text: '键入专栏' }),
+        el('div', {
+          class: 'muted',
+          text: hookOn
+            ? '应用内按实际增加的字数计（不含粘贴）；全局按键只记次数，不记内容'
+            : '应用内按实际增加的字数计（不含粘贴）。全局按键需在设置里手动开启',
+        }),
+        el('div', { class: 'insight-kpis', style: 'margin:10px 0 0' }, [
+          el('div', { class: 'card insight-kpi' }, [
+            el('div', { class: 'muted', text: '今天敲了' }),
+            el('div', { class: 'insight-num', text: `${data.typedChars || 0} 字` }),
+            el('div', { class: 'muted', text: '在本应用输入框' }),
+          ]),
+          el('div', { class: 'card insight-kpi' }, [
+            el('div', { class: 'muted', text: '全局按键' }),
+            el('div', {
+              class: 'insight-num',
+              text: hookOn ? `${data.typedKeys || 0} 次` : '未开启',
+            }),
+            el('div', {
+              class: 'muted',
+              text: hookOn ? '含编辑器/游戏等，约等于手速' : '设置 → 统计全局按键次数',
+            }),
+          ]),
+          el('div', { class: 'card insight-kpi' }, [
+            el('div', { class: 'muted', text: '本周应用内' }),
+            el('div', {
+              class: 'insight-num',
+              text: `${(data.days || []).reduce((n, d) => n + (d.typedChars || 0), 0)} 字`,
+            }),
+            el('div', { class: 'muted', text: '不含全局按键' }),
+          ]),
+        ]),
+      ])
+    );
 
     // —— 24h 分布 ——
     const hours = data.hours || [];

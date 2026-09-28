@@ -146,6 +146,8 @@
         insights: async () => ({ date: '', workMs: 0, workMin: 0, readChars: 0, hours: [], apps: [], days: [] }),
         addRead: async () => ({}),
         addWrite: async () => ({}),
+        addTyped: async () => ({}),
+        flushTypedKeys: async () => ({}),
       },
       events: {
         on: (channel, handler) => {
@@ -209,6 +211,106 @@
       this._lifeTimer = setInterval(() => {
         if (this.mode === 'compact') this.updateCompactSummary();
       }, 75000);
+      this.bindTypingStats();
+    },
+
+    /** 应用内键入字数：按实际插入的文本计（不含粘贴） */
+    bindTypingStats() {
+      if (this._typingBound) return;
+      this._typingBound = true;
+      let pending = 0;
+      let flushTimer = null;
+
+      const flush = () => {
+        if (pending <= 0) return;
+        const n = pending;
+        pending = 0;
+        try {
+          const p = window.ling && window.ling.activity && window.ling.activity.addTyped(n);
+          Promise.resolve(p).catch(() => {
+            // 失败则退回待写，避免静默丢统计
+            pending += n;
+          });
+        } catch (_) {
+          pending += n;
+        }
+      };
+      const schedule = () => {
+        if (flushTimer) clearTimeout(flushTimer);
+        flushTimer = setTimeout(flush, 600);
+      };
+      const bump = (n) => {
+        const k = Number(n) || 0;
+        if (k <= 0) return;
+        pending += k;
+        schedule();
+      };
+
+      const isField = (t) =>
+        !!(t && t.matches && t.matches('input, textarea, [contenteditable="true"]'));
+
+      // 以「这次插入了什么」计，避开 IME 组合过程中的假增量
+      document.addEventListener(
+        'beforeinput',
+        (e) => {
+          if (!isField(e.target)) return;
+          if (e.isComposing) return;
+          const type = e.inputType || '';
+          if (type === 'insertFromPaste' || type === 'insertFromDrop' || type === 'insertFromPasteAsQuotation') {
+            return;
+          }
+          if (type === 'insertLineBreak' || type === 'insertParagraph') {
+            bump(1);
+            return;
+          }
+          if (type === 'insertText') {
+            const data = e.data != null ? String(e.data) : '';
+            if (data) bump(data.length);
+            return;
+          }
+          // 输入法组合过程不计，由 compositionend 一次上屏统计
+          if (type === 'insertCompositionText') return;
+          if (!type && e.data) bump(String(e.data).length);
+        },
+        true
+      );
+
+      // 中文等输入法：上屏时一次记 composition 结果
+      document.addEventListener(
+        'compositionend',
+        (e) => {
+          if (!isField(e.target)) return;
+          const data = e.data != null ? String(e.data) : '';
+          if (data) bump(data.length);
+        },
+        true
+      );
+
+      // 兜底：beforeinput 不可用时用 value 增量
+      const lens = new WeakMap();
+      document.addEventListener(
+        'input',
+        (e) => {
+          const t = e.target;
+          if (!isField(t)) return;
+          if (e.isComposing) return;
+          if (e.inputType === 'insertFromPaste' || e.inputType === 'insertFromDrop') return;
+          // 有 beforeinput 时已计，这里只在完全没有 beforeinput 覆盖时用
+          if (window.__lingHasBeforeInput) return;
+          const text = 'value' in t ? String(t.value || '') : String(t.textContent || '');
+          const prev = lens.get(t) || 0;
+          const delta = text.length - prev;
+          lens.set(t, text.length);
+          if (delta > 0) bump(delta);
+        },
+        true
+      );
+
+      // 标记支持 beforeinput
+      try {
+        const probe = document.createElement('input');
+        if ('onbeforeinput' in probe) window.__lingHasBeforeInput = true;
+      } catch (_) {}
     },
 
     applyTheme(theme) {

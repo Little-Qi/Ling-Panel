@@ -34,6 +34,34 @@ test('topApps returns prettified sorted list', () => {
   assert.strictEqual(apps[2].name, 'VS Code');
 });
 
+test('Weixin process shows as 微信', () => {
+  assert.strictEqual(activity.prettifyApp('Weixin'), '微信');
+  assert.strictEqual(activity.prettifyApp('Weixin.exe'), '微信');
+});
+
+test('typed keys and chars accumulate on today', () => {
+  const tracker = new activity.ActivityTracker({
+    store: {
+      data: activity.emptyDay('2026-09-21'),
+      getSection() {
+        return this.data;
+      },
+      setSection(_k, v) {
+        this.data = v;
+      },
+    },
+    getIdleMs: () => 0,
+    probeApp: async () => 'Code',
+    intervalMs: 1000,
+  });
+  tracker.addTypedKeys(12);
+  tracker.addTypedChars(8);
+  tracker.addTypedChars(4);
+  const pack = activity.insightsPayload(tracker.load());
+  assert.strictEqual(pack.typedKeys, 12);
+  assert.strictEqual(pack.typedChars, 12);
+});
+
 test('rollDay preserves history across midnight', () => {
   const day1 = activity.applySample(
     activity.emptyDay('2026-01-01'),

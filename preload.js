@@ -70,6 +70,8 @@ contextBridge.exposeInMainWorld('ling', {
     insights: () => ipcRenderer.invoke('activity:insights'),
     addRead: (n) => ipcRenderer.invoke('activity:add-read', n),
     addWrite: (n) => ipcRenderer.invoke('activity:add-write', n),
+    addTyped: (n) => ipcRenderer.invoke('activity:add-typed', n),
+    flushTypedKeys: () => ipcRenderer.invoke('activity:flush-typed-keys'),
   },
   ai: {
     sessions: () => ipcRenderer.invoke('ai:sessions'),

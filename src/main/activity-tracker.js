@@ -22,6 +22,8 @@ function emptyDay(date = dayKey()) {
     date,
     workMs: 0,
     readChars: 0,
+    typedKeys: 0,
+    typedChars: 0,
     apps: {},
     hours: emptyHours(),
     updatedAt: Date.now(),
@@ -37,6 +39,8 @@ function normalizeDay(stats, date) {
     date: date || (stats && stats.date) || dayKey(),
     workMs: Number(stats && stats.workMs) || 0,
     readChars: Number(stats && stats.readChars) || 0,
+    typedKeys: Number(stats && stats.typedKeys) || 0,
+    typedChars: Number(stats && stats.typedChars) || 0,
     apps: stats && stats.apps && typeof stats.apps === 'object' ? { ...stats.apps } : {},
     hours,
     updatedAt: Number(stats && stats.updatedAt) || Date.now(),
@@ -81,6 +85,8 @@ function applySample(stats, sample, now = Date.now()) {
   }
   if (sample.readChars) next.readChars += Math.max(0, sample.readChars);
   if (sample.writeChars) next.readChars += Math.max(0, sample.writeChars);
+  if (sample.typedKeys) next.typedKeys = (next.typedKeys || 0) + Math.max(0, sample.typedKeys);
+  if (sample.typedChars) next.typedChars = (next.typedChars || 0) + Math.max(0, sample.typedChars);
   if (sample.app && sample.appMs) {
     next.apps[sample.app] = (next.apps[sample.app] || 0) + Math.max(0, sample.appMs);
   }
@@ -110,6 +116,8 @@ function summarize(stats) {
     workMs: s.workMs,
     workMin: Math.floor(s.workMs / 60000),
     readChars: s.readChars,
+    typedKeys: s.typedKeys || 0,
+    typedChars: s.typedChars || 0,
     topApp: top ? prettifyApp(top.name) : '',
     topAppMs: top ? top.ms : 0,
     apps: s.apps,
@@ -126,6 +134,8 @@ function insightsPayload(stats) {
     workMs: today.workMs,
     workMin: Math.floor(today.workMs / 60000),
     readChars: today.readChars,
+    typedKeys: today.typedKeys || 0,
+    typedChars: today.typedChars || 0,
     hours: today.hours.slice(),
     apps: topApps(today, 10),
     days: days.map((d) => ({
@@ -133,6 +143,8 @@ function insightsPayload(stats) {
       workMin: Math.floor(d.workMs / 60000),
       workMs: d.workMs,
       readChars: d.readChars,
+      typedChars: d.typedChars || 0,
+      typedKeys: d.typedKeys || 0,
     })),
   };
 }
@@ -145,7 +157,10 @@ function prettifyApp(name) {
     msedge: 'Edge',
     firefox: 'Firefox',
     WeChat: '微信',
+    Weixin: '微信',
+    weixin: '微信',
     WXWork: '企业微信',
+    WeCom: '企业微信',
     DingTalk: '钉钉',
     explorer: '资源管理器',
     WindowsTerminal: '终端',
@@ -154,8 +169,35 @@ function prettifyApp(name) {
     pwsh: 'PowerShell',
     cmd: '命令提示符',
     LingPanel: '灵动手边',
+    ApplicationFrameHost: '系统应用',
+    SearchHost: '搜索',
+    StartMenuExperienceHost: '开始菜单',
+    ShellExperienceHost: '系统界面',
   };
   return map[n] || n;
+}
+
+/** 不参与「主力软件」的进程 */
+const IGNORED_APPS = new Set([
+  '',
+  'explorer',
+  'SearchHost',
+  'StartMenuExperienceHost',
+  'ShellExperienceHost',
+  'ApplicationFrameHost',
+  'ShellHost',
+  'TextInputHost',
+  'LingPanel',
+  'ling-panel',
+]);
+
+function normalizeAppName(raw) {
+  return String(raw || '')
+    .trim()
+    .split(/\r?\n/)
+    .pop()
+    .replace(/\.exe$/i, '')
+    .trim();
 }
 
 /** Windows：读前台进程名（超时返回空） */
@@ -220,8 +262,14 @@ class ActivityTracker {
     this.store = opts.store;
     this.getIdleMs = opts.getIdleMs || defaultIdleMs;
     this.probeApp = opts.probeApp || probeForeground;
-    this.intervalMs = opts.intervalMs || 15000;
+    // 10s 采样：进程探测会 spawn PowerShell，不宜过密
+    this.intervalMs = opts.intervalMs || 10000;
     this._timer = null;
+    // 连续两次看到同一前台进程才计入，减少通知弹窗抢焦点的误差
+    this._stableApp = '';
+    this._candidateApp = '';
+    this._lastProbedApp = '';
+    this._probeTick = 0;
   }
 
   load() {
@@ -244,6 +292,20 @@ class ActivityTracker {
     return this.addReadChars(n);
   }
 
+  addTypedKeys(n) {
+    const stats = rollDay(this.store.getSection('activity'));
+    stats.typedKeys = (stats.typedKeys || 0) + Math.max(0, Number(n) || 0);
+    stats.updatedAt = Date.now();
+    return this.save(stats);
+  }
+
+  addTypedChars(n) {
+    const stats = rollDay(this.store.getSection('activity'));
+    stats.typedChars = (stats.typedChars || 0) + Math.max(0, Number(n) || 0);
+    stats.updatedAt = Date.now();
+    return this.save(stats);
+  }
+
   sampleActive(windowMs) {
     const idleMs = Math.max(0, Number(this.getIdleMs()) || 0);
     let credited;
@@ -256,19 +318,39 @@ class ActivityTracker {
   async tick() {
     const now = Date.now();
     const { credited } = this.sampleActive(this.intervalMs);
-    let app = '';
-    try {
-      app = (await this.probeApp()) || '';
-    } catch (_) {}
-    if (app && /^(ShellExperienceHost|SearchHost|StartMenuExperienceHost)$/i.test(app)) {
-      app = '';
+
+    // 前台进程探测有进程创建成本：隔次探测，中间沿用上次结果
+    this._probeTick += 1;
+    let app = this._lastProbedApp;
+    if (this._probeTick === 1 || this._probeTick % 2 === 0) {
+      try {
+        app = normalizeAppName((await this.probeApp()) || '');
+      } catch (_) {
+        app = this._lastProbedApp;
+      }
+      this._lastProbedApp = app;
     }
+    const usable = app && !IGNORED_APPS.has(app) ? app : '';
+
+    // 稳定前台：连续两窗相同才记，避免微信通知一闪就吃掉整段时间
+    let creditApp = '';
+    if (usable && usable === this._stableApp) {
+      creditApp = usable;
+    } else if (usable && usable === this._candidateApp) {
+      this._stableApp = usable;
+      creditApp = usable;
+    } else if (usable) {
+      this._candidateApp = usable;
+    } else {
+      this._candidateApp = '';
+    }
+
     const stats = applySample(
       this.store.getSection('activity'),
       {
         activeMs: credited,
-        app: app || undefined,
-        appMs: credited,
+        app: creditApp || undefined,
+        appMs: creditApp ? credited : 0,
       },
       now
     );
@@ -316,5 +398,7 @@ module.exports = {
   insightsPayload,
   prettifyApp,
   probeForeground,
+  IGNORED_APPS,
+  normalizeAppName,
   ActivityTracker,
 };
