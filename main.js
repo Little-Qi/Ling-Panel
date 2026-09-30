@@ -644,6 +644,7 @@ if (!gotLock) {
           startKeyHookIfNeeded();
           return;
         }
+        if (keyHook.ensureAlive) keyHook.ensureAlive();
         const d = keyHook.readDelta();
         if (d) activity.addTypedKeys(d);
       } catch (_) {}

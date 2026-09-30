@@ -299,6 +299,12 @@ class ActivityTracker {
     return this.save(stats);
   }
 
+  /** 跨天后把键数基线交给新一天（钩子累计值继续用） */
+  rolloverDayIfNeeded() {
+    const stats = rollDay(this.store.getSection('activity'));
+    return this.save(stats);
+  }
+
   addTypedChars(n) {
     const stats = rollDay(this.store.getSection('activity'));
     stats.typedChars = (stats.typedChars || 0) + Math.max(0, Number(n) || 0);
