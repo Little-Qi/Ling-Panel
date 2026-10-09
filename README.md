@@ -4,7 +4,7 @@
 
 数据默认完全留在本机：没有账号、没有云同步、没有遥测。
 
-当前版本：**0.3.0**
+当前版本：**0.3.6**
 
 从零实现的 Electron 桌面应用，针对「贴顶小窗 + 本地工作台」场景做了完整设计与打磨。
 
@@ -82,6 +82,7 @@
 - **番茄钟** — 可配置专注/短休/长休时长与长休周期，完成系统通知，保留历史
 - **论文** — 扫描下载目录中的 PDF，按主题归档到论文库，读元数据补全标题/年份，支持内容去重
 - **AI 对话日志** — 记录与 AI 工具的问答（手动或剪贴板），按会话组织
+- **节律** — 本机工作节律：净工作时长、阅读/键入字数、软件占用、24 小时分布与近两周趋势；**可切换日期查看历史任意一天，趋势图可切换统计口径**（默认关闭，可在设置开启）
 - **设置** — 主题、停靠、尺寸、IME 策略、贴边隐藏、开机启动、剪贴板监听、论文库路径、数据导入导出
 
 ### 系统集成
@@ -122,7 +123,7 @@ npm start
 
 ### 安装正式包
 
-从 [Releases](../../releases) 下载 `LingPanel-0.3.0-setup.exe`，双击安装即可。安装器为 NSIS，支持自定义安装目录、创建桌面与开始菜单快捷方式；卸载默认**保留**用户数据。
+从 [Releases](../../releases) 下载 `LingPanel-0.3.6-setup.exe`，双击安装即可。安装器为 NSIS，支持自定义安装目录、创建桌面与开始菜单快捷方式；卸载默认**保留**用户数据。
 
 ---
 
@@ -324,8 +325,8 @@ ling-panel/
 │  └─ renderer/
 │     ├─ index.html / styles.css / app.js
 │     ├─ lib/              # Markdown、DOM 工具
-│     └─ views/            # home / todo / notes / links / pomodoro / papers / ailog / settings
-├─ tests/                  # node:test 单测（53+）
+│     └─ views/            # home / todo / notes / links / pomodoro / papers / ailog / insights / settings
+├─ tests/                  # node:test 单测（106）
 └─ docs/                   # DESIGN / DATA / ISSUES
 ```
 
@@ -344,7 +345,7 @@ npm start
 node --test tests/store.test.js
 ```
 
-测试覆盖：存储、Markdown、剪贴板归档、AI 日志、通知服务白名单、论文解析与去重、首页渲染、可展开文本等。
+测试覆盖：存储、Markdown、剪贴板归档与全量管理器、AI 日志、通知服务白名单、论文解析与去重、节律统计（含日期切换）、全局按键计数契约、首页渲染、可展开文本等。
 
 设计说明见 [docs/DESIGN.md](docs/DESIGN.md)，数据说明见 [docs/DATA.md](docs/DATA.md)。
 

@@ -403,9 +403,31 @@
       document.documentElement.style.setProperty('--capsule-breathe', breathe);
     },
 
+    /**
+     * 收起时清理 body 级浮层。
+     * 剪贴板全量管理器 / 分层归档弹层都挂在 document.body 上，
+     * 不在 #expanded 里，因此 showCompact() 藏不住它们：
+     * 窗口缩到胶囊尺寸后它们只是被裁出可视区，DOM 与状态都还在，
+     * 重新展开时会「原地复活」。必须在收起时显式关掉。
+     */
+    closeBodyOverlays() {
+      try {
+        if (window.ClipManager && window.ClipManager.close) window.ClipManager.close();
+      } catch (_) {}
+      try {
+        if (this._clipToastTimer) {
+          clearTimeout(this._clipToastTimer);
+          this._clipToastTimer = null;
+        }
+        const toast = document.getElementById('clipToast');
+        if (toast) toast.remove();
+      } catch (_) {}
+    },
+
     showCompact() {
       this.mode = 'compact';
       document.body.dataset.mode = 'compact';
+      this.closeBodyOverlays();
       const c = document.getElementById('compact');
       const e = document.getElementById('expanded');
       if (c) {
@@ -911,7 +933,12 @@
       });
 
       window.addEventListener('keydown', (e) => {
-        if (e.key === 'Escape' && this.mode === 'expanded') {
+        if (e.key !== 'Escape') return;
+        // 剪贴板全量管理器是模态浮层：Esc 先只关它，不该连带收起整个面板
+        try {
+          if (window.ClipManager && window.ClipManager.isOpen && window.ClipManager.isOpen()) return;
+        } catch (_) {}
+        if (this.mode === 'expanded') {
           const active = document.activeElement;
           if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
             active.blur();

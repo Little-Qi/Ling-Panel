@@ -76,6 +76,33 @@ public static class LingKeyHook {
 
   public static void Start(string path) {
     _path = path;
+    // The counter must survive process restarts.
+    // This hook is respawned whenever the file goes stale (e.g. after sleep),
+    // and a fresh process would start at 0 and write that back to the file,
+    // wiping both the running total and the reader's baseline.
+    // Resume from the existing file so the count stays monotonic.
+    // NOTE: keep this block ASCII-only. The C# lives in a PowerShell here-string,
+    // and PowerShell 5.1 decodes BOM-less .ps1 as ANSI/GBK on zh-CN systems,
+    // so non-ASCII bytes here break the compile.
+    try {
+      if (File.Exists(path)) {
+        string raw = File.ReadAllText(path).Trim();
+        int v;
+        if (int.TryParse(raw, out v)) {
+          _count = v;
+        } else {
+          // legacy shape: {"count":N}
+          int idx = raw.IndexOf("\"count\"");
+          if (idx >= 0) {
+            int start = raw.IndexOf(':', idx) + 1;
+            int end = raw.IndexOfAny(new char[] { ',', '}' }, start);
+            if (start > 0 && end > start && int.TryParse(raw.Substring(start, end - start).Trim(), out v)) {
+              _count = v;
+            }
+          }
+        }
+      }
+    } catch {}
     _proc = HookCallback;
     using (Process cur = Process.GetCurrentProcess()) {
       using (ProcessModule m = cur.MainModule) {

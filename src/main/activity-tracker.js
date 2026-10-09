@@ -124,28 +124,33 @@ function summarize(stats) {
   };
 }
 
-/** 「节律」页数据包：展示当前存储日，不强制滚到系统今天 */
+/** 单日数据包：含该日明细（小时分布 / 软件占用），供「节律」页按日期切换 */
+function dayPayload(d) {
+  return {
+    date: d.date,
+    workMs: d.workMs,
+    workMin: Math.floor(d.workMs / 60000),
+    readChars: d.readChars,
+    typedKeys: d.typedKeys || 0,
+    typedChars: d.typedChars || 0,
+    hours: d.hours.slice(),
+    apps: topApps(d, 10),
+  };
+}
+
+/**
+ * 「节律」页数据包：当前存储日 + 近 14 天。
+ * 每天都带完整明细，渲染层切换日期时无需再走一次 IPC。
+ * 注意 history 里本来就存着各日的小时分布与软件表（见 normalizeDay），
+ * 这里只是把它们一并透出，不新增落盘字段。
+ */
 function insightsPayload(stats) {
   const today = normalizeDay(stats, stats && stats.date);
   const history = normalizeHistory(stats && stats.history).filter((h) => h.date !== today.date);
   const days = [...history, today].slice(-14);
   return {
-    date: today.date,
-    workMs: today.workMs,
-    workMin: Math.floor(today.workMs / 60000),
-    readChars: today.readChars,
-    typedKeys: today.typedKeys || 0,
-    typedChars: today.typedChars || 0,
-    hours: today.hours.slice(),
-    apps: topApps(today, 10),
-    days: days.map((d) => ({
-      date: d.date,
-      workMin: Math.floor(d.workMs / 60000),
-      workMs: d.workMs,
-      readChars: d.readChars,
-      typedChars: d.typedChars || 0,
-      typedKeys: d.typedKeys || 0,
-    })),
+    ...dayPayload(today),
+    days: days.map(dayPayload),
   };
 }
 
@@ -401,6 +406,7 @@ module.exports = {
   topApp,
   topApps,
   summarize,
+  dayPayload,
   insightsPayload,
   prettifyApp,
   probeForeground,

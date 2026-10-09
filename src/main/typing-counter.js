@@ -11,6 +11,15 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 
+/**
+ * 多久没写文件就判定钩子卡死并重启。
+ * typed-keys.json 只在按键时刷新，所以「不打字」和「钩子死了」在文件上同形。
+ * 这个阈值必须大于正常打字间隔（读代码/思考常超过 1 分钟），
+ * 否则会频繁重启——而每次重启都要 spawn PowerShell 并 Add-Type 编译，很贵。
+ * 取 3 分钟：休眠/崩溃后最多 3 分钟恢复，代价可接受。
+ */
+const STALE_MS = 180000;
+
 function keysPath(dataDir) {
   return path.join(dataDir, 'typed-keys.json');
 }
@@ -106,8 +115,9 @@ function startKeyHook(dataDir) {
     /** 自上次调用以来新增键数（首调用只建基线，返回 0） */
     readDelta() {
       const { count, mtimeMs } = readKeysFile(file);
-      // 文件长时间不更新且进程疑似挂了 → 尝试拉起
-      const stale = Date.now() - mtimeMs > 45000;
+      // 文件长时间不更新且进程疑似挂了 → 尝试拉起。
+      // keyhook.ps1 会从本文件续接计数，所以重启不会丢数据（见 STALE_MS 注释）。
+      const stale = Date.now() - mtimeMs > STALE_MS;
       if ((!isAlive() || stale) && !stopped) {
         restart();
       }
@@ -123,6 +133,7 @@ function startKeyHook(dataDir) {
 }
 
 module.exports = {
+  STALE_MS,
   keysPath,
   readKeysFile,
   startKeyHook,

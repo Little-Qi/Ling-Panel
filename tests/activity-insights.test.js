@@ -82,3 +82,46 @@ test('history is capped', () => {
   }
   assert.ok(stats.history.length <= activity.HISTORY_LIMIT);
 });
+
+test('insightsPayload 为每一天带上明细，供切换日期', () => {
+  let stats = activity.emptyDay('2026-09-19');
+  stats = activity.applySample(
+    stats,
+    { activeMs: 3600000, app: 'Code', appMs: 3600000 },
+    new Date('2026-09-19T09:00:00').getTime()
+  );
+  stats = activity.applySample(
+    stats,
+    { activeMs: 60000, readChars: 300, typedChars: 40 },
+    new Date('2026-09-20T11:00:00').getTime()
+  );
+  const pack = activity.insightsPayload(stats);
+  const yesterday = pack.days.find((d) => d.date === '2026-09-19');
+  assert.ok(yesterday, '历史日应出现在 days 中');
+  assert.strictEqual(yesterday.workMin, 60);
+  assert.strictEqual(yesterday.hours[9], 3600000, '历史日应带小时分布');
+  assert.ok(Array.isArray(yesterday.apps) && yesterday.apps.length > 0, '历史日应带软件占用');
+  assert.strictEqual(yesterday.apps[0].name, 'VS Code');
+});
+
+test('days 按时间升序且每天始终有 hours 数组', () => {
+  let stats = activity.emptyDay('2026-09-01');
+  for (let i = 1; i <= 5; i++) {
+    const d = new Date(2026, 8, i, 10, 0, 0);
+    stats = activity.applySample(stats, { activeMs: 60000, readChars: i * 10 }, d.getTime());
+  }
+  const pack = activity.insightsPayload(stats);
+  const dates = pack.days.map((d) => d.date);
+  assert.deepStrictEqual(dates, [...dates].sort(), 'days 应按日期升序，便于前后翻页');
+  for (const d of pack.days) {
+    assert.strictEqual(d.hours.length, 24, `${d.date} 的 hours 必须是 24 段`);
+  }
+});
+
+test('insightsPayload 保持旧字段不变（向后兼容）', () => {
+  const stats = activity.emptyDay('2026-09-20');
+  const pack = activity.insightsPayload(stats);
+  for (const k of ['date', 'workMs', 'workMin', 'readChars', 'typedKeys', 'typedChars', 'hours', 'apps', 'days']) {
+    assert.ok(k in pack, `payload 应保留字段 ${k}`);
+  }
+});

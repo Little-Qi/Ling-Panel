@@ -107,6 +107,17 @@
     return 0;
   }
 
+  /**
+   * 选中数与 DOM 的唯一同步点。
+   * state.selected 的每条变更路径（单条勾选 / 全选 / 清空选中 /
+   * 批量操作后清空 / paint 时剔除失效 id）都必须经过这里，
+   * 否则计数会和真实选中集不一致。
+   */
+  function syncCount() {
+    const node = overlay && overlay.querySelector('.clip-mgr-bulk-count');
+    if (node) node.textContent = `已选 ${state.selected.size}`;
+  }
+
   function close() {
     if (overlay) {
       overlay.remove();
@@ -117,7 +128,12 @@
   }
 
   function onEsc(e) {
-    if (e.key === 'Escape') close();
+    if (e.key !== 'Escape') return;
+    // 模态浮层要吃掉这次 Esc：keydown 由 document 冒泡到 window，
+    // 若不拦截，window 上的面板监听器会在浮层已关之后才去判断状态，
+    // 结果是「按 Esc 关浮层」被连带升级成「收起整个面板」。
+    if (e && typeof e.stopPropagation === 'function') e.stopPropagation();
+    close();
   }
 
   async function paint() {
@@ -136,6 +152,9 @@
     for (const id of [...state.selected]) {
       if (!live.has(id)) state.selected.delete(id);
     }
+
+    // 兜底同步：全选 / 清空选中 / 批量操作后都会走到这里
+    syncCount();
 
     if (stats) {
       const total = state.tab === 'inbox' ? data.inbox.length : data.clips.length;
@@ -163,7 +182,7 @@
             if (e.target.checked) state.selected.add(c.id);
             else state.selected.delete(c.id);
             row.classList.toggle('selected', e.target.checked);
-            overlay.querySelector('.clip-mgr-bulk-count').textContent = `已选 ${state.selected.size}`;
+            syncCount();
           },
         }),
         el('div', { class: 'col', style: 'flex:1;min-width:0;gap:4px' }, [
@@ -275,7 +294,8 @@
         }),
         el('button', {
           class: 'btn sm ghost',
-          text: '清空选中',
+          text: '取消选择',
+          title: '仅取消勾选，不会删除内容',
           onclick: async () => {
             state.selected = new Set();
             await paint();
@@ -337,6 +357,7 @@
     async function renderChrome() {
       bulkHost.innerHTML = '';
       bulkHost.appendChild(bulkBar());
+      syncCount();
     }
 
     overlay.appendChild(
@@ -359,5 +380,10 @@
     search.focus();
   }
 
-  global.ClipManager = { open, close, copyText };
+  /** 浮层是否已打开：供面板收起时清理，以及 Esc 分层处理使用 */
+  function isOpen() {
+    return !!overlay;
+  }
+
+  global.ClipManager = { open, close, copyText, isOpen };
 })(typeof globalThis !== 'undefined' ? globalThis : this);
