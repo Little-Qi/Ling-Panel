@@ -396,8 +396,69 @@
       el('div', { class: 'muted', text: '会按主题自动分好文件夹。' }),
     ]);
 
+    // —— 外部 Markdown 编辑器（灵墨 LingMark）——
+    const editorCard = el('div', { class: 'card', id: 'md-editor-path' }, [
+      el('h3', { text: '外部 Markdown 编辑器' }),
+      el('div', {
+        class: 'muted',
+        style: 'margin-bottom:10px',
+        text: '用「灵墨 LingMark」打开笔记，功能更全。留空则自动探测安装位置。',
+      }),
+      el('div', { class: 'field', style: 'margin-bottom:10px' }, [
+        el('label', { text: '编辑器可执行文件' }),
+        el('input', {
+          class: 'input',
+          id: 'mdEditorPath',
+          value: settings.mdEditorPath || '',
+          placeholder: '例如 C:\\Program Files\\LingMark\\LingMark.exe',
+          onchange: async (e) => {
+            await saveSettings({ mdEditorPath: e.target.value.trim() });
+          },
+        }),
+      ]),
+      el('div', { class: 'row', style: 'gap:8px;align-items:center' }, [
+        el('button', {
+          class: 'btn sm',
+          text: '自动探测',
+          onclick: async () => {
+            const r = await window.ling.app.detectEditor();
+            await window.ling.app.notify({
+              title: r && r.ok ? '已找到编辑器' : '没有找到编辑器',
+              message:
+                r && r.ok
+                  ? r.path
+                  : '请手动填写 LingMark.exe 的完整路径',
+            });
+          },
+        }),
+        el('span', { class: 'muted', id: 'mdEditorHint', text: '' }),
+      ]),
+    ]);
+
+    // —— 截图收件箱 ——
+    const shotsCard = el('div', { class: 'card', id: 'shots-dir' }, [
+      el('h3', { text: '截图收件箱' }),
+      el('div', {
+        class: 'muted',
+        style: 'margin-bottom:10px',
+        text: '从哪个文件夹收截图（默认是 Snipaste 的自动保存目录）。',
+      }),
+      el('div', { class: 'field' }, [
+        el('label', { text: '截图文件夹' }),
+        el('input', {
+          class: 'input',
+          id: 'shotsDir',
+          value: settings.shotsDir || '',
+          placeholder: '留空则用默认目录',
+          onchange: async (e) => {
+            await saveSettings({ shotsDir: e.target.value.trim() });
+          },
+        }),
+      ]),
+    ]);
+
     const grid = el('div', { class: 'col', style: 'gap:12px' });
-    grid.append(appearance, workflow, paperCard);
+    grid.append(appearance, workflow, paperCard, editorCard, shotsCard);
     root.appendChild(grid);
 
     (async () => {

@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
   <meta charset="UTF-8" />
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: https:; connect-src 'self' https:;" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: file: https:; connect-src 'self' https:;" />
   <title>LING</title>
   <link rel="stylesheet" href="styles.css" />
 </head>
@@ -37,6 +37,7 @@
           <button class="tab" data-tab="pomodoro">番茄钟</button>
           <button class="tab" data-tab="papers">论文</button>
           <button class="tab" data-tab="ailog">AI 对话</button>
+          <button class="tab" data-tab="shots">截图</button>
           <button class="tab" data-tab="insights" id="tabInsights" hidden>节律</button>
           <button class="tab" data-tab="settings">设置</button>
         </nav>
@@ -54,6 +55,7 @@
         <div class="view" id="view-pomodoro" data-view="pomodoro" hidden></div>
         <div class="view" id="view-papers" data-view="papers" hidden></div>
         <div class="view" id="view-ailog" data-view="ailog" hidden></div>
+        <div class="view" id="view-shots" data-view="shots" hidden></div>
         <div class="view" id="view-insights" data-view="insights" hidden></div>
         <div class="view" id="view-settings" data-view="settings" hidden></div>
       </main>
@@ -71,6 +73,7 @@
   <script src="views/pomodoro.js"></script>
   <script src="views/papers.js"></script>
   <script src="views/ailog.js"></script>
+  <script src="views/shots.js"></script>
   <script src="views/insights.js"></script>
   <script src="views/settings.js"></script>
   <script src="app.js"></script>

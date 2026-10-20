@@ -95,6 +95,28 @@
       }),
       current
         ? el('button', {
+            class: 'btn',
+            text: '外部编辑',
+            title: '用灵墨 LingMark 打开这篇笔记（改动会自动回写）',
+            onclick: async () => {
+              if (!current) return;
+              const res = await window.ling.note.openExternal(current.id);
+              if (res && res.ok) {
+                window.ling.app.notify({
+                  title: '已在灵墨中打开',
+                  message: '在灵墨里保存后，这里会自动同步',
+                });
+              } else {
+                window.ling.app.notify({
+                  title: '无法打开外部编辑器',
+                  message: (res && res.error) || '未找到灵墨',
+                });
+              }
+            },
+          })
+        : null,
+      current
+        ? el('button', {
             class: 'btn danger',
             text: '删除当前',
             onclick: async () => {

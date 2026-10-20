@@ -6,3 +6,11 @@ dist/
 Thumbs.db
 
 cases/
+
+# 开发期视觉验证产物
+/shot-*.png
+/md-editor/samples/shot-*.png
+/md-editor/dist/
+宣传片/
+
+.build-temp/

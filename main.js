@@ -3,8 +3,14 @@ const path = require('path');
 
 // 锁定 userData 为 ling-panel：开发/安装包共用 %APPDATA%\ling-panel\
 // 避免安装包 productName(LingPanel) 导致重装后读到空目录，看起来像数据被覆盖
+// 例外：设置 LING_PANEL_USERDATA 可让开发实例用独立目录，
+// 这样它和已安装的正式版能同时运行（否则单实例锁会互相顶掉）
 try {
-  app.setPath('userData', path.join(app.getPath('appData'), 'ling-panel'));
+  const override = String(process.env.LING_PANEL_USERDATA || '').trim();
+  app.setPath(
+    'userData',
+    override || path.join(app.getPath('appData'), 'ling-panel')
+  );
 } catch (_) {}
 
 const { Store, dataDir, storePath, deepMerge, DEFAULTS } = require('./src/main/store');
@@ -15,6 +21,8 @@ const aiLog = require('./src/main/ai-log');
 const clipNotify = require('./src/main/clip-notify');
 const activityTracker = require('./src/main/activity-tracker');
 const typingCounter = require('./src/main/typing-counter');
+const externalEditor = require('./src/main/external-editor');
+const shotLib = require('./src/main/shot-lib');
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -26,6 +34,7 @@ if (!gotLock) {
   const activity = new activityTracker.ActivityTracker({ store });
   let keyHook = null;
   let keyHookTimer = null;
+  let noteWatcher = null;
 
   function uid(prefix) {
     return `${prefix}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
@@ -302,6 +311,40 @@ if (!gotLock) {
       return true;
     });
 
+    // —— 外部 Markdown 编辑器（灵墨）——
+    ipcMain.handle('app:detect-editor', () => {
+      const s = store.getSection('settings') || {};
+      const ed = externalEditor.resolveEditor(s.mdEditorPath);
+      return {
+        ok: !!ed,
+        path: ed ? ed.exe : '',
+        source: ed ? ed.source : 'none',
+        candidates: externalEditor.candidatePaths(),
+      };
+    });
+
+    ipcMain.handle('note:open-external', (_e, id) => {
+      const s = store.getSection('settings') || {};
+      const ed = externalEditor.resolveEditor(s.mdEditorPath);
+      if (!ed) {
+        return {
+          ok: false,
+          error: '找不到外部 Markdown 编辑器（灵墨）。请在「设置 → 外部编辑器」里指定路径。',
+        };
+      }
+      const notes = store.getSection('notes') || [];
+      const note = notes.find((n) => n.id === id);
+      if (!note) return { ok: false, error: '笔记不存在' };
+      try {
+        const file = externalEditor.exportNote(dataDir(), note.id, note.content || '');
+        const r = externalEditor.openInEditor(ed, file);
+        if (!r.ok) return { ok: false, error: r.error };
+        return { ok: true, file, editor: ed.exe };
+      } catch (err) {
+        return { ok: false, error: String(err.message || err) };
+      }
+    });
+
     ipcMain.handle('link:list', () => store.getSection('links') || []);
     ipcMain.handle('link:create', async (_e, payload) => {
       const links = store.getSection('links') || [];
@@ -442,6 +485,126 @@ if (!gotLock) {
         return true;
       } catch {
         return false;
+      }
+    });
+
+    // —— 截图收件箱 ——
+    const shotsDir = () => {
+      const s = store.getSection('settings') || {};
+      const custom = String(s.shotsDir || '').trim();
+      return custom || shotLib.defaultShotsDir();
+    };
+
+    ipcMain.handle('shot:info', () => ({
+      dir: shotsDir(),
+      defaultDir: shotLib.defaultShotsDir(),
+      count: (store.getSection('shots') || []).length,
+    }));
+
+    ipcMain.handle('shot:list', () => (store.getSection('shots') || []));
+
+    ipcMain.handle('shot:scan', () => {
+      try {
+        const known = store.getSection('shots') || [];
+        const items = shotLib.scanShots(shotsDir(), known);
+        return { ok: true, dir: shotsDir(), items };
+      } catch (err) {
+        return { ok: false, error: String(err.message || err), items: [] };
+      }
+    });
+
+    ipcMain.handle('shot:ingest', (_e, items) => {
+      const list = Array.isArray(items) ? items : [];
+      if (!list.length) return { ok: true, added: 0, shots: store.getSection('shots') || [] };
+      const shots = (store.getSection('shots') || []).slice();
+      const knownPaths = new Set(shots.map((s) => s.path));
+      const knownFps = new Set(shots.map((s) => s.fp).filter(Boolean));
+      let added = 0;
+      for (const it of list) {
+        if (!it || !it.path) continue;
+        if (knownPaths.has(it.path)) continue;
+        if (it.fp && knownFps.has(it.fp)) continue;
+        const id = uid('shot');
+        shots.unshift({
+          id,
+          path: it.path,
+          name: it.name || '',
+          size: it.size || 0,
+          at: it.at || Date.now(),
+          fp: it.fp || '',
+          createdAt: Date.now(),
+        });
+        knownPaths.add(it.path);
+        if (it.fp) knownFps.add(it.fp);
+        added += 1;
+      }
+      store.setSection('shots', shots);
+      return { ok: true, added, shots };
+    });
+
+    ipcMain.handle('shot:remove', (_e, payload) => {
+      const id = payload && payload.id;
+      const deleteFile = payload && payload.deleteFile === true;
+      const shots = (store.getSection('shots') || []).slice();
+      const idx = shots.findIndex((s) => s.id === id);
+      if (idx < 0) return { ok: false, error: '截图不存在' };
+      const removed = shots.splice(idx, 1)[0];
+      store.setSection('shots', shots);
+      if (deleteFile && removed.path) {
+        try {
+          require('fs').unlinkSync(removed.path);
+        } catch (_) {}
+      }
+      return { ok: true, shots };
+    });
+
+    ipcMain.handle('shot:clear', () => {
+      store.setSection('shots', []);
+      return { ok: true, shots: [] };
+    });
+
+    ipcMain.handle('shot:open', (_e, p) => {
+      const { shell } = require('electron');
+      try {
+        shell.openPath(p);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
+    ipcMain.handle('shot:reveal', (_e, p) => {
+      const { shell } = require('electron');
+      try {
+        shell.showItemInFolder(p);
+        return true;
+      } catch {
+        return false;
+      }
+    });
+
+    ipcMain.handle('shot:data-url', (_e, p) => shotLib.readAsDataUrl(p));
+
+    ipcMain.handle('shot:to-note-asset', (_e, p) => {
+      try {
+        const r = shotLib.toNoteAsset(dataDir(), p, null);
+        return { ok: true, ...r };
+      } catch (err) {
+        return { ok: false, error: String(err.message || err) };
+      }
+    });
+
+    ipcMain.handle('shot:copy', async (_e, p) => {
+      const { clipboard, nativeImage } = require('electron');
+      try {
+        const dataUrl = shotLib.readAsDataUrl(p);
+        if (!dataUrl) return { ok: false, error: '读取图片失败' };
+        const img = nativeImage.createFromDataURL(dataUrl);
+        if (img.isEmpty()) return { ok: false, error: '图片解码失败' };
+        clipboard.writeImage(img);
+        return { ok: true };
+      } catch (err) {
+        return { ok: false, error: String(err.message || err) };
       }
     });
 
@@ -660,6 +823,20 @@ if (!gotLock) {
     registerShortcuts();
     clipTimer = startClipboardWatch(store);
 
+    // 外部 Markdown 编辑器（灵墨）改动了导出的 .md → 回写笔记
+    noteWatcher = externalEditor.watchNotes(dataDir(), (file, content) => {
+      const noteId = externalEditor.noteIdFromFile(file);
+      const notes = (store.getSection('notes') || []).slice();
+      const idx = notes.findIndex((n) => n.id === noteId);
+      if (idx < 0) return;
+      if (notes[idx].content === content) return;
+      notes[idx] = { ...notes[idx], content, updatedAt: Date.now() };
+      store.setSection('notes', notes);
+      if (panel && panel.win && !panel.win.isDestroyed()) {
+        panel.send('note:external-changed', { id: noteId });
+      }
+    });
+
     const settings = store.getSection('settings') || {};
     if (settings.enableAiNotify === true || process.env.LING_ENABLE_AI_NOTIFY === '1') {
       notifyServer = startNotifyServer({
@@ -681,6 +858,9 @@ if (!gotLock) {
     globalShortcut.unregisterAll();
     if (clipTimer) clearInterval(clipTimer);
     if (keyHookTimer) clearInterval(keyHookTimer);
+    try {
+      if (noteWatcher) noteWatcher();
+    } catch (_) {}
     try {
       if (keyHook) keyHook.stop();
     } catch (_) {}

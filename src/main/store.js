@@ -36,6 +36,8 @@ const DEFAULTS = {
     showInsights: true,
     insightsTargetMin: 240,
     enableKeyHook: false,
+    mdEditorPath: '',
+    shotsDir: '',
     firstRunDone: false,
   },
   activity: {
@@ -59,6 +61,7 @@ const DEFAULTS = {
   links: [],
   clips: [],
   clipInbox: [],
+  shots: [],
   pomodoro: {
     focusMin: 25,
     breakMin: 5,
@@ -153,6 +156,7 @@ const CAPS = {
   links: 500,
   clips: 500,
   clipInbox: 300,
+  shots: 300,
 };
 
 function capList(key, list) {

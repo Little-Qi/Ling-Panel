@@ -1,0 +1,64 @@
+{
+  "name": "lingmark",
+  "version": "0.1.0",
+  "description": "灵墨 LingMark — 轻量 Markdown 编辑器：本地文件、秒开、所见即所得",
+  "main": "main.js",
+  "license": "MIT",
+  "author": "LingPanel",
+  "scripts": {
+    "start": "electron .",
+    "test": "node --test tests/*.test.js",
+    "build:win": "node --require ./scripts/build-env.js ./node_modules/electron-builder/out/cli/cli.js --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.lingpanel.lingmark",
+    "productName": "LingMark",
+    "electronDist": "node_modules/electron/dist",
+    "directories": {
+      "output": "dist"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "zip"
+      ],
+      "artifactName": "LingMark-${version}-setup.${ext}",
+      "signAndEditExecutable": false
+    },
+    "fileAssociations": [
+      {
+        "ext": "md",
+        "name": "Markdown 文档",
+        "description": "Markdown 文档",
+        "role": "Editor",
+        "mimeType": "text/markdown"
+      },
+      {
+        "ext": "markdown",
+        "name": "Markdown 文档",
+        "description": "Markdown 文档",
+        "role": "Editor",
+        "mimeType": "text/markdown"
+      }
+    ],
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": false,
+      "deleteAppDataOnUninstall": false,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "include": "installer.nsh"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "!samples/**/*"
+    ]
+  }
+}

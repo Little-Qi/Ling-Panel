@@ -7,6 +7,7 @@
     pomodoro: () => window.PomodoroView,
     papers: () => window.PapersView,
     ailog: () => window.AiLogView,
+    shots: () => window.ShotsView,
     insights: () => window.InsightsView,
     settings: () => window.SettingsView,
   };
@@ -92,6 +93,7 @@
           mem.notes = mem.notes.filter((n) => n.id !== id);
           return true;
         },
+        openExternal: async () => ({ ok: false, error: 'demo 模式不支持外部编辑器' }),
       },
       link: {
         list: async () => mem.links,
@@ -123,12 +125,26 @@
         listIgnored: async () => [],
         pdfHints: async () => ({}),
       },
+      shot: {
+        info: async () => ({ dir: '', defaultDir: '', count: 0 }),
+        list: async () => [],
+        scan: async () => ({ ok: false, error: 'demo 模式不支持扫描', items: [] }),
+        ingest: async () => ({ ok: true, added: 0, shots: [] }),
+        remove: async () => ({ ok: false, error: 'demo 模式' }),
+        clear: async () => ({ ok: true, shots: [] }),
+        open: async () => false,
+        reveal: async () => false,
+        dataUrl: async () => '',
+        copy: async () => ({ ok: false, error: 'demo 模式' }),
+        toNoteAsset: async () => ({ ok: false, error: 'demo 模式' }),
+      },
       ai: {
         sessions: async () => [],
         createSession: async (t) => ({ id: 's1', title: t || 'LLM chat' }),
         renameSession: async () => null,
         removeSession: async () => true,
         items: async () => [],
+        reorder: async () => true,
         add: async () => ({ ok: true }),
         remove: async () => true,
         update: async () => null,
@@ -140,6 +156,7 @@
         notify: async (p) => console.log('[notify]', p),
         version: async () => '0.2.0-fallback',
         clipboardWrite: async () => false,
+        detectEditor: async () => ({ ok: false, path: '', source: 'none', candidates: [] }),
       },
       activity: {
         summary: async () => ({ date: '', workMs: 0, readChars: 0, topApp: '', apps: {} }),
@@ -929,6 +946,15 @@
         try {
           await this.refreshBadge();
           if (this.mode === 'expanded') await this.refreshCurrent();
+        } catch (_) {}
+      });
+
+      // 外部编辑器（灵墨）改动了导出的 .md，主进程已回写笔记 → 刷新当前页
+      on('note:external-changed', async () => {
+        try {
+          if (this.mode === 'expanded' && this.currentTab === 'notes') {
+            await this.refreshCurrent();
+          }
         } catch (_) {}
       });
 

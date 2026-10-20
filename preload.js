@@ -36,6 +36,7 @@ contextBridge.exposeInMainWorld('ling', {
     create: (payload) => ipcRenderer.invoke('note:create', payload),
     update: (id, patch) => ipcRenderer.invoke('note:update', id, patch),
     remove: (id) => ipcRenderer.invoke('note:remove', id),
+    openExternal: (id) => ipcRenderer.invoke('note:open-external', id),
   },
   link: {
     list: () => ipcRenderer.invoke('link:list'),
@@ -60,10 +61,24 @@ contextBridge.exposeInMainWorld('ling', {
     listIgnored: () => ipcRenderer.invoke('paper:list-ignored'),
     pdfHints: (filePath) => ipcRenderer.invoke('paper:pdf-hints', filePath),
   },
+  shot: {
+    info: () => ipcRenderer.invoke('shot:info'),
+    list: () => ipcRenderer.invoke('shot:list'),
+    scan: () => ipcRenderer.invoke('shot:scan'),
+    ingest: (items) => ipcRenderer.invoke('shot:ingest', items),
+    remove: (payload) => ipcRenderer.invoke('shot:remove', payload),
+    clear: () => ipcRenderer.invoke('shot:clear'),
+    open: (p) => ipcRenderer.invoke('shot:open', p),
+    reveal: (p) => ipcRenderer.invoke('shot:reveal', p),
+    dataUrl: (p) => ipcRenderer.invoke('shot:data-url', p),
+    copy: (p) => ipcRenderer.invoke('shot:copy', p),
+    toNoteAsset: (p) => ipcRenderer.invoke('shot:to-note-asset', p),
+  },
   app: {
     notify: (payload) => ipcRenderer.invoke('app:notify', payload),
     version: () => ipcRenderer.invoke('app:version'),
     clipboardWrite: (text) => ipcRenderer.invoke('app:clipboard-write', text),
+    detectEditor: () => ipcRenderer.invoke('app:detect-editor'),
   },
   activity: {
     summary: () => ipcRenderer.invoke('activity:summary'),
@@ -101,6 +116,7 @@ contextBridge.exposeInMainWorld('ling', {
         'clipboard:changed',
         'clipboard:archived',
         'activity:updated',
+        'note:external-changed',
       ]);
       if (!allowed.has(channel)) return () => {};
       const listener = (_event, payload) => handler(payload);
