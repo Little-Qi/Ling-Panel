@@ -4,6 +4,11 @@
   let selectedId = null;
   let previewOn = true;
 
+  const PAGE_SIZE = 50;
+  let query = '';
+  let offset = 0;
+  let flushEdits = async () => {};
+
   function mdToolbar() {
     const wrap = el('div', { class: 'md-toolbar' });
     const actions = [
@@ -60,10 +65,24 @@
   }
 
   async function renderNotes(root, arg) {
-    const notes = await window.ling.note.list();
-    if (arg && typeof arg === 'string') selectedId = arg;
-    if (!selectedId && notes[0]) selectedId = notes[0].id;
-    const current = notes.find((n) => n.id === selectedId) || notes[0] || null;
+    try {
+      await flushEdits();
+    } catch (error) {
+      window.ling.app.notify({ title: '笔记保存失败，修改仍在编辑框中', message: error.message });
+      return;
+    }
+    if (typeof arg === 'string') {
+      selectedId = arg;
+      query = '';
+      offset = 0;
+    } else if (arg?.id) {
+      selectedId = arg.id;
+    }
+    const firstPage = await window.ling.note.page({ query, offset, limit: PAGE_SIZE });
+    const id = selectedId || firstPage.items[0]?.id;
+    let current = id ? await window.ling.note.get(id) : null;
+    if (!current && firstPage.items[0]) current = await window.ling.note.get(firstPage.items[0].id);
+    selectedId = current?.id || null;
 
     root.innerHTML = '';
     root.className = 'view ime-safe';
@@ -78,6 +97,8 @@
             content: '# 未命名笔记\n\n开始记录…\n',
           });
           selectedId = note.id;
+          query = '';
+          offset = 0;
           await App.refreshCurrent();
         },
       }),
@@ -85,12 +106,11 @@
         class: 'input',
         style: 'flex:1;min-width:140px',
         placeholder: '搜索笔记标题或内容…',
+        value: query,
         oninput: (e) => {
-          const q = e.target.value.trim().toLowerCase();
-          document.querySelectorAll('.note-list-item').forEach((node) => {
-            const hay = node.getAttribute('data-hay') || '';
-            node.style.display = !q || hay.includes(q) ? '' : 'none';
-          });
+          query = e.target.value;
+          offset = 0;
+          search();
         },
       }),
       current
@@ -100,6 +120,7 @@
             title: '用灵墨 LingMark 打开这篇笔记（改动会自动回写）',
             onclick: async () => {
               if (!current) return;
+              await flushEdits();
               const res = await window.ling.note.openExternal(current.id);
               if (res && res.ok) {
                 window.ling.app.notify({
@@ -121,6 +142,8 @@
             text: '删除当前',
             onclick: async () => {
               if (!current) return;
+              await flushEdits();
+              offset = 0;
               await window.ling.note.remove(current.id);
               selectedId = null;
               await App.refreshCurrent();
@@ -131,79 +154,86 @@
 
     const layout = el('div', { class: 'md-layout' });
 
-    // list
-    const listCol = el('div', { class: 'card', style: 'overflow:auto;max-height:420px' }, [
-      el('h3', { text: `全部笔记 (${notes.length})` }),
-    ]);
+    const listTitle = el('h3');
     const listBox = el('div', { class: 'col', style: 'gap:4px' });
-    if (!notes.length) {
-      listBox.appendChild(el('div', { class: 'empty', text: '暂无笔记' }));
+    const listCol = el('div', { class: 'card', style: 'overflow:auto;max-height:420px' }, [listTitle, listBox]);
+    let listRequest = 0;
+    let currentRowTitle;
+    function paintList(page) {
+      listBox.innerHTML = '';
+      listTitle.textContent = (query ? '匹配笔记' : '全部笔记') + ' (' + page.total + ')';
+      for (const note of page.items) {
+        const title = el('div', { class: 't', text: note.title });
+        if (note.id === selectedId) currentRowTitle = title;
+        listBox.appendChild(el('button', {
+          class: 'note-list-item' + (note.id === selectedId ? ' active' : ''),
+          onclick: () => App.go('notes', { id: note.id }),
+        }, [title, el('div', { class: 'd', text: LingUtil.formatTime(note.updatedAt) })]));
+      }
+      if (!page.total) listBox.appendChild(el('div', { class: 'empty', text: query ? '没有匹配的笔记' : '暂无笔记' }));
+      if (offset || page.total > PAGE_SIZE) {
+        listBox.appendChild(LingUtil.pager(Math.floor(offset / PAGE_SIZE), Math.max(1, Math.ceil(page.total / PAGE_SIZE)), (page) => {
+          offset = page * PAGE_SIZE;
+          return loadPage();
+        }));
+      }
     }
-    for (const n of notes) {
-      listBox.appendChild(
-        el(
-          'div',
-          {
-            class: `note-list-item${n.id === (current && current.id) ? ' active' : ''}`,
-            'data-hay': `${n.title} ${n.content}`.toLowerCase(),
-            onclick: () => {
-              selectedId = n.id;
-              App.refreshCurrent();
-            },
-          },
-          [
-            el('div', { class: 't', text: n.title }),
-            el('div', { class: 'd', text: LingUtil.formatTime(n.updatedAt) }),
-          ]
-        )
-      );
+    async function loadPage() {
+      const request = ++listRequest;
+      const page = await window.ling.note.page({ query, offset, limit: PAGE_SIZE });
+      if (request === listRequest) paintList(page);
     }
-    listCol.appendChild(listBox);
+    const search = LingUtil.debounce(loadPage, 120);
+    paintList(firstPage);
 
     // editor
-    const editorCol = el('div', { class: 'card' }, [
-      el('h3', { text: '编辑 Markdown' }),
-      mdToolbar(),
-      el('input', {
-        class: 'input',
-        style: 'margin-bottom:8px',
-        id: 'noteTitle',
-        placeholder: '标题',
-        value: current ? current.title : '',
-        oninput: LingUtil.debounce(async (e) => {
-          if (!current) return;
-          await window.ling.note.update(current.id, { title: e.target.value });
-        }, 400),
-      }),
-      el('textarea', {
-        class: 'textarea',
-        id: 'noteEditor',
-        placeholder: '支持 Markdown：# 标题、**加粗**、- 列表、```代码块```…',
-        text: current ? current.content : '',
-        oninput: LingUtil.debounce(async (e) => {
-          if (!current) return;
-          await window.ling.note.update(current.id, { content: e.target.value });
-          const preview = document.getElementById('mdPreview');
-          if (preview) preview.innerHTML = LingMarkdown.renderMarkdown(e.target.value);
-          const titleInput = document.getElementById('noteTitle');
-          const next = await window.ling.note.list();
-          const updated = next.find((n) => n.id === current.id);
-          if (titleInput && updated && document.activeElement !== titleInput) {
-            titleInput.value = updated.title;
-          }
-        }, 250),
-      }),
-    ]);
+    let pending = {};
+    let saveTimer;
+    let saving;
+    async function writePending() {
+      while (current && Object.keys(pending).length) {
+        const patch = pending;
+        pending = {};
+        try {
+          const updated = await window.ling.note.update(current.id, patch);
+          if (!updated || selectedId !== current.id) continue;
+          if (currentRowTitle) currentRowTitle.textContent = updated.title;
+          if (!('title' in pending) && document.activeElement !== titleInput) titleInput.value = updated.title;
+          if ('content' in patch && previewOn) preview.innerHTML = LingMarkdown.renderMarkdown(editor.value);
+        } catch (error) {
+          pending = { ...patch, ...pending };
+          throw error;
+        }
+      }
+    }
+    function flush() {
+      clearTimeout(saveTimer);
+      if (!saving) saving = writePending().finally(() => { saving = null; });
+      return saving;
+    }
+    flushEdits = flush;
+    function saveSoon(field, value) {
+      pending[field] = value;
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => flush().catch((error) =>
+        window.ling.app.notify({ title: '笔记保存失败', message: error.message })), 250);
+    }
+    const titleInput = el('input', { class: 'input', style: 'margin-bottom:8px', id: 'noteTitle',
+      placeholder: '标题', value: current?.title || '', disabled: !current,
+      oninput: (e) => saveSoon('title', e.target.value),
+    });
+    const editor = el('textarea', { class: 'textarea', id: 'noteEditor',
+      placeholder: '支持 Markdown：# 标题、**加粗**、- 列表、```代码块```…',
+      value: current?.content || '', disabled: !current,
+      oninput: (e) => saveSoon('content', e.target.value),
+    });
+    const editorCol = el('div', { class: 'card' }, [el('h3', { text: '编辑 Markdown' }), mdToolbar(), titleInput, editor]);
 
     // preview — 修复 issue #8
-    const previewCol = el('div', { class: 'card', hidden: !previewOn }, [
-      el('h3', { text: '预览' }),
-      el('div', {
-        class: 'md-preview',
-        id: 'mdPreview',
-        html: current ? LingMarkdown.renderMarkdown(current.content) : '<p class="muted">选择或新建一篇笔记</p>',
-      }),
-    ]);
+    const preview = el('div', { class: 'md-preview', id: 'mdPreview',
+      html: current && previewOn ? LingMarkdown.renderMarkdown(current.content) : '',
+    });
+    const previewCol = el('div', { class: 'card', hidden: !previewOn }, [el('h3', { text: '预览' }), preview]);
 
     layout.append(listCol, editorCol, previewCol);
     if (!previewOn) {

@@ -4,7 +4,7 @@
 
 数据默认完全留在本机：没有账号、没有云同步、没有遥测。
 
-当前版本：**0.3.6**
+当前版本为 **0.3.8**。
 
 从零实现的 Electron 桌面应用，针对「贴顶小窗 + 本地工作台」场景做了完整设计与打磨。
 
@@ -124,7 +124,8 @@ npm start
 
 ### 安装正式包
 
-从 [Releases](../../releases) 下载 `LingPanel-0.3.6-setup.exe`，双击安装即可。安装器为 NSIS，支持自定义安装目录、创建桌面与开始菜单快捷方式；卸载默认**保留**用户数据。
+从 [GitHub Releases](https://github.com/Little-Qi/Ling-Panel/releases/latest) 下载 `LingPanel-0.3.8-setup.exe`，双击安装即可。安装器为 NSIS，可选「仅为我」或「所有用户」，
+也能自定义安装目录、创建桌面与开始菜单快捷方式；已装过旧版时会沿用原安装位置直接覆盖升级。卸载默认**保留**用户数据。
 
 ---
 
@@ -289,15 +290,15 @@ npm start
 
 - **打开数据目录**
 - **导出 workspace.json**
-- **导入 workspace.json**（导入前自动备份当前文件为 `.bak-<时间戳>`）
+- **导入 workspace.json**（导入前将当前文件保留为 `workspace.json.bak-<唯一标识>`）
 
 论文库文件夹不在 workspace.json 内，迁移时把论文库目录一并拷走即可。
 
 ### 持久化实现要点
 
-1. 启动时 `load()` 一次，与默认配置 `deepMerge`
-2. 任意分区变更后原子写入（先写 `.tmp` 再 `rename`）
-3. 渲染进程只通过 IPC 访问主进程 Store，不直接碰磁盘
+1. 启动时读取并校验工作区。文件损坏时可恢复上一份快照、选择其他备份或新建空库。恢复或新建前会保留损坏的原件。
+2. 用户修改先写入临时文件，再原子替换工作区。上一份工作区保存在同目录的 `workspace.json.bak`。
+3. 活动统计在内存中累计，最多每分钟写入一次。保存其他内容、导出工作区或正常退出时也会一并写入。
 
 字段说明详见 [docs/DATA.md](docs/DATA.md)。
 
@@ -369,7 +370,8 @@ node --test tests/store.test.js
 
 测试覆盖：存储、Markdown、剪贴板归档与全量管理器、AI 日志、通知服务白名单、论文解析与去重、节律统计（含日期切换）、全局按键计数契约、首页渲染、可展开文本等。
 
-设计说明见 [docs/DESIGN.md](docs/DESIGN.md)，数据说明见 [docs/DATA.md](docs/DATA.md)。
+设计说明见 [docs/DESIGN.md](docs/DESIGN.md)，数据说明见 [docs/DATA.md](docs/DATA.md)，
+构建/安装环境说明（含“为什么不能直接双击 dist 里的安装包”）见 [docs/BUILD-ENV.md](docs/BUILD-ENV.md)。
 
 ---
 
@@ -391,6 +393,17 @@ npm run build:win
 1. 依赖 `electron-builder`；首次若需联网拉 winCodeSign，可配置镜像：`ELECTRON_BUILDER_BINARIES_MIRROR`
 2. 本仓库使用 `afterPack` 本地 rcedit 写入图标，**无需**打开 `signAndEditExecutable`（那会强制联网）
 3. 未配置代码签名时会跳过签名，不影响本地分发
+4. `npm run build:win` 结束时会跑 `scripts/check-installer.js` 体检产物：安装包小于 20 MB 直接判失败。
+   这是为了拦住「NSIS 弹窗卡住、dist 里只剩几百 KB 残缺包」的情况
+5. 装包阶段如果弹出 `Error writing temporary file. Make sure your temp folder is valid.`：
+   说明低完整性安装器写不进 `%TEMP%\Low`。`scripts/build-env.js` 每次构建前会确保
+   该目录存在并设为 Low 完整性；仍报错时手动删掉 `%TEMP%\Low` 后重试
+6. 安装器是 assisted 模式：会出现「仅为我 / 所有用户」的选择，选「所有用户」时才需要管理员权限。
+   升级时 `initMultiUser` 会读注册表里旧版的安装位置，默认原地覆盖，不会留下两份
+7. **不要直接在项目目录里双击安装包验收**：本工作区目录带低完整性/受限策略，从它启动的安装器会被降权，
+   表现为「Error writing temporary file」，或选「所有用户」时弹「运行方式」凭据框。
+   先把 `setup.exe` 复制到项目外的普通目录（如 `C:\Installers\`）再运行，细节见
+   [docs/BUILD-ENV.md](docs/BUILD-ENV.md)
 
 升级版本时请同步修改 `package.json` 的 `version`。
 

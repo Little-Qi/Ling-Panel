@@ -2,10 +2,7 @@
   const { el } = LingUtil;
 
   async function renderTodo(root) {
-    const [todos, workflows] = await Promise.all([
-      window.ling.todo.list(),
-      window.ling.todo.workflows(),
-    ]);
+    const workflows = await window.ling.todo.workflows();
 
     root.innerHTML = '';
     root.className = 'view ime-safe';
@@ -72,24 +69,18 @@
     let showAllDone = false;
     const DONE_PREVIEW = 6;
 
-    function renderBoard() {
+    const pages = Object.create(null);
+    let request = 0;
+    async function renderBoard() {
+      const version = ++request;
+      const groups = await window.ling.todo.board(pages, showAllDone);
+      if (version !== request) return;
       board.innerHTML = '';
       for (const wf of workflows) {
         const isDoneCol = wf.id === 'done';
-        let colTodos = todos
-          .filter((t) => t.status === wf.id)
-          .sort((a, b) => {
-            if (isDoneCol) {
-              // 已完成：最近完成的在上
-              return (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0);
-            }
-            return (a.dueAt || 0) - (b.dueAt || 0);
-          });
-
-        const total = colTodos.length;
-        if (isDoneCol && !showAllDone && total > DONE_PREVIEW) {
-          colTodos = colTodos.slice(0, DONE_PREVIEW);
-        }
+        const group = groups.find((g) => g.name === wf.id);
+        const colTodos = group?.items || [];
+        const total = group?.total || 0;
 
         const header = el('h4', {}, [
           el('span', { class: 'dot', style: `background:${wf.color}` }),
@@ -104,9 +95,7 @@
             text: '清空',
             onclick: async () => {
               if (!confirm(`清空 ${total} 条已完成？`)) return;
-              for (const t of todos.filter((x) => x.status === 'done')) {
-                await window.ling.todo.remove(t.id);
-              }
+              await window.ling.todo.clearDone();
               await App.refreshCurrent();
             },
           });
@@ -184,21 +173,28 @@
             el('button', {
               class: 'btn sm ghost',
               style: 'width:100%;margin-top:6px',
-              text: showAllDone ? '收起' : `展开其余 ${total - DONE_PREVIEW} 条`,
+              text: showAllDone ? '收起' : `查看全部 ${total} 条`,
               onclick: () => {
                 showAllDone = !showAllDone;
+                pages[wf.id] = 0;
                 renderBoard();
               },
             })
           );
         }
 
+        if (group?.pageCount > 1 && (!isDoneCol || showAllDone)) {
+          list.appendChild(LingUtil.pager(group.page, group.pageCount, (page) => {
+            pages[wf.id] = page;
+            return renderBoard();
+          }));
+        }
         col.appendChild(list);
         board.appendChild(col);
       }
     }
 
-    renderBoard();
+    await renderBoard();
     root.append(quickBar, toolbar, board);
   }
 

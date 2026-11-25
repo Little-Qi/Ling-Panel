@@ -115,6 +115,10 @@ function boot() {
   const notes = [];
   const links = [];
   const clips = [];
+  const clipInbox = [];
+  const lists = require('../src/shared/workspace-lists');
+  const sections = { notes, todos, links, clips, clipInbox };
+  const store = { getSection: (key) => sections[key] };
   const sandbox = {
     console,
     setTimeout,
@@ -131,6 +135,8 @@ function boot() {
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   sandbox.window.ling = {
+    home: { overview: async () => lists.homeOverview(store) },
+    clip: { summary: async () => lists.clipSummary(store) },
     todo: {
       list: async () => todos,
       create: async (p) => {
@@ -174,7 +180,7 @@ function boot() {
   const root = path.join(__dirname, '..');
   loadScript(path.join(root, 'src/renderer/lib/util.js'), sandbox);
   loadScript(path.join(root, 'src/renderer/views/home.js'), sandbox);
-  return { sandbox, clips, notes, todos, links, document, Element, Text };
+  return { sandbox, clips, clipInbox, notes, todos, links, document, Element, Text };
 }
 
 test('el flattens nested .map() children (regression: appendChild Array)', () => {

@@ -11,25 +11,32 @@ function aiLogPath(root) {
 }
 
 function loadAiLog(root) {
+  let raw;
   try {
-    const f = aiLogPath(root);
-    if (fs.existsSync(f)) {
-      const raw = JSON.parse(fs.readFileSync(f, 'utf8'));
-      return {
-        sessions: raw.sessions || [],
-        items: raw.items || [],
-      };
-    }
-  } catch (_) {}
-  return { sessions: [], items: [] };
+    raw = JSON.parse(fs.readFileSync(aiLogPath(root), 'utf8'));
+  } catch (err) {
+    if (err.code === 'ENOENT') return { sessions: [], items: [] };
+    throw err;
+  }
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('AI 日志格式错误');
+  const { sessions = [], items = [] } = raw;
+  if (!Array.isArray(sessions) || !Array.isArray(items)) throw new Error('AI 日志格式错误');
+  // 旧版本可能截掉了会话头，但消息仍在。沿用原 ID 让这些消息重新可见。
+  const ids = new Set(sessions.map((s) => s.id));
+  for (const item of items) {
+    if (!item.sessionId || ids.has(item.sessionId)) continue;
+    sessions.push({ id: item.sessionId, title: defaultTitleFrom(item.content), createdAt: item.createdAt, updatedAt: item.createdAt });
+    ids.add(item.sessionId);
+  }
+  return { sessions, items };
 }
 
 function saveAiLog(root, data) {
   const f = aiLogPath(root);
   fs.mkdirSync(path.dirname(f), { recursive: true });
-  const sessions = (data.sessions || []).slice(-200);
-  const items = (data.items || []).slice(-5000);
-  fs.writeFileSync(f, JSON.stringify({ sessions, items }, null, 2), 'utf8');
+  const { sessions = [], items = [] } = data;
+  fs.writeFileSync(f + '.tmp', JSON.stringify({ sessions, items }, null, 2), 'utf8');
+  fs.renameSync(f + '.tmp', f);
   return { sessions, items };
 }
 
@@ -78,17 +85,15 @@ function listSessions(root) {
   return loadAiLog(root).sessions;
 }
 
+function itemOrder(item) {
+  return Number.isFinite(item.order) ? item.order : Number(item.createdAt) || 0;
+}
+
 function listItems(root, sessionId) {
   const db = loadAiLog(root);
   let items = db.items;
   if (sessionId) items = items.filter((it) => it.sessionId === sessionId);
-  return items
-    .slice()
-    .sort((a, b) => {
-      const oa = Number.isFinite(a.order) ? a.order : a.createdAt;
-      const ob = Number.isFinite(b.order) ? b.order : b.createdAt;
-      return oa - ob || (a.createdAt || 0) - (b.createdAt || 0);
-    });
+  return items.slice().sort((a, b) => itemOrder(a) - itemOrder(b) || (a.createdAt || 0) - (b.createdAt || 0));
 }
 
 /** 按展示顺序（自上而下）写回会话内条目 */
@@ -162,7 +167,7 @@ function addItem(root, { sessionId, role, content, title, source, autoTitle }) {
     content: text,
     source: source === 'clipboard' ? 'clipboard' : 'manual',
     createdAt: Date.now(),
-    order: db.items.filter((x) => x.sessionId === sessId).length,
+    order: db.items.reduce((max, x) => x.sessionId === sessId ? Math.max(max, itemOrder(x)) : max, -1) + 1,
   };
   db.items.push(item);
   const sess = db.sessions.find((s) => s.id === sessId);
@@ -173,7 +178,7 @@ function addItem(root, { sessionId, role, content, title, source, autoTitle }) {
     }
   }
   saveAiLog(root, db);
-  return { ok: true, item, sessionId: sessId, nextRole: suggestNextRole(root, sessId) };
+  return { ok: true, item, sessionId: sessId, nextRole: item.role === 'q' ? 'a' : 'q' };
 }
 
 function removeItem(root, id) {

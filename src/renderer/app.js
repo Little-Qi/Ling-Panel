@@ -26,10 +26,20 @@
       ],
       pomodoro: { focusMin: 25, breakMin: 5, longBreakMin: 15, cyclesBeforeLong: 4, history: [] },
       clips: [],
+      clipInbox: [],
     };
     const listeners = {};
+    const panelState = (state, tab) => Promise.all(
+      (listeners['panel:state'] || []).map((handler) => handler({ state, tab }))
+    );
+    const store = { getSection: (key) => mem[key], save: (patch) => Object.assign(mem, patch) };
     return {
       __fallback: true,
+      clip: {
+        process: async (ids, action) => WorkspaceLists.applyInboxAction(store, ids, action),
+        summary: async () => WorkspaceLists.clipSummary(store),
+      },
+      home: { overview: async () => WorkspaceLists.homeOverview(store) },
       store: {
         get: async (k) => mem[k] || mem.settings,
         set: async (k, v) => {
@@ -49,9 +59,9 @@
         importWorkspace: async () => ({ ok: false, error: 'fallback' }),
       },
       panel: {
-        expand: async (tab) => App.showExpanded(tab || 'home'),
-        collapse: async () => App.showCompact(),
-        toggle: async () => (App.mode === 'expanded' ? App.showCompact() : App.showExpanded('home')),
+        expand: (tab) => panelState('expanded', tab || 'home'),
+        collapse: () => panelState('compact'),
+        toggle: () => panelState(App.mode === 'expanded' ? 'compact' : 'expanded', 'home'),
         state: async () => App.mode,
         inputFocus: async () => {},
         inputBlur: async () => {},
@@ -62,6 +72,9 @@
       },
       todo: {
         list: async () => mem.todos,
+        board: async (pages, expandDone) => WorkspaceLists.groupPages(mem.todos, 'status', pages, expandDone),
+        openCount: async () => mem.todos.filter((t) => t.status !== 'done').length,
+        clearDone: async () => { mem.todos = mem.todos.filter((t) => t.status !== 'done'); return true; },
         create: async (p) => {
           const item = { id: 't' + Date.now(), status: 'today', dueAt: Date.now() + 3600e3, ...p };
           mem.todos.unshift(item);
@@ -80,6 +93,8 @@
       },
       note: {
         list: async () => mem.notes,
+        page: async (opts) => WorkspaceLists.notePage(mem.notes, opts),
+        get: async (id) => mem.notes.find((n) => n.id === id),
         create: async (p) => {
           const item = { id: 'n' + Date.now(), updatedAt: Date.now(), ...p };
           mem.notes.unshift(item);
@@ -97,6 +112,7 @@
       },
       link: {
         list: async () => mem.links,
+        groups: async (pages) => WorkspaceLists.groupPages(mem.links, 'group', pages),
         create: async (p) => {
           const item = { id: 'l' + Date.now(), group: '默认', title: p.title || p.url, ...p };
           mem.links.unshift(item);
@@ -121,6 +137,7 @@
         rescanSummary: async () => ({}),
         open: async () => true,
         ignore: async () => ({ ok: true, ignored: [] }),
+        ignoreMany: async () => ({ ok: true, ignored: [] }),
         unignore: async () => ({ ok: true, ignored: [] }),
         listIgnored: async () => [],
         pdfHints: async () => ({}),
@@ -181,7 +198,6 @@
   const App = {
     mode: 'compact',
     currentTab: 'home',
-    viewArg: null,
     bootError: null,
     ready: false,
 
@@ -206,9 +222,12 @@
         this.applyInsightsTab(!settings || settings.showInsights !== false);
         const dock = (settings && settings.dock) || 'top-center';
         this.applyOrient(dock === 'left-edge' || dock === 'right-edge');
-        await this.updateCompactSummary();
-        if (this.mode === 'expanded') {
-          await this.showExpanded((settings && settings.defaultTab) || 'home');
+        const nativeMode = !window.ling.__fallback && await window.ling.panel.state();
+        const initial = this.pendingPanelState || { state: nativeMode || this.mode, tab: settings?.defaultTab };
+        this.ready = true;
+        this.pendingPanelState = null;
+        if (initial.state === 'expanded') {
+          await this.showExpanded(initial.tab || 'home');
         } else {
           this.showCompact();
         }
@@ -352,7 +371,7 @@
       document.body.dataset.orient = vertical ? 'vertical' : 'horizontal';
     },
 
-    async updateCompactSummary() {
+    async updateCompactSummary(openCount) {
       const label = document.getElementById('capsuleLabel');
       const sub = document.getElementById('capsuleSub');
       const life = globalThis.CapsuleLife;
@@ -363,8 +382,7 @@
         settings = (await window.ling.store.get('settings')) || {};
       } catch (_) {}
       try {
-        const todos = await window.ling.todo.list();
-        open = (todos || []).filter((t) => t.status !== 'done').length;
+        open = openCount ?? await window.ling.todo.openCount();
       } catch (_) {}
       try {
         stats = (await window.ling.activity.summary()) || null;
@@ -455,7 +473,6 @@
         e.hidden = true;
         e.style.display = 'none';
       }
-      this.updateCompactSummary();
     },
 
     async showExpanded(tab) {
@@ -477,26 +494,6 @@
       await this.go(tab || this.currentTab || 'home');
     },
 
-    syncModeToViewport() {
-      const h = window.innerHeight;
-      if (h >= 140 && this.mode !== 'expanded') {
-        this.showExpanded(this.currentTab || 'home');
-      } else if (h < 90 && this.mode !== 'compact') {
-        this.showCompact();
-      } else if (h >= 140) {
-        const c = document.getElementById('compact');
-        const e = document.getElementById('expanded');
-        if (c) {
-          c.hidden = true;
-          c.style.display = 'none';
-        }
-        if (e) {
-          e.hidden = false;
-          e.style.display = 'flex';
-        }
-      }
-    },
-
     async go(tab, arg) {
       // 串行渲染，避免收起/展开连点导致同一视图叠加两份 DOM
       const prev = this._goLock || Promise.resolve();
@@ -508,7 +505,6 @@
     async _renderView(tab, arg) {
       if (!views[tab]) tab = 'home';
       this.currentTab = tab;
-      this.viewArg = arg || null;
 
       document.querySelectorAll('.tab').forEach((btn) => {
         btn.classList.toggle('active', btn.dataset.tab === tab);
@@ -535,39 +531,32 @@
     },
 
     async refreshCurrent() {
-      await this.go(this.currentTab, this.viewArg);
+      await this.go(this.currentTab);
       await this.refreshBadge();
+    },
+
+    refreshAfterClipboard() {
+      return this.mode === 'expanded' ? this.refreshCurrent() : this.refreshBadge();
     },
 
     async refreshBadge() {
       try {
-        const todos = await window.ling.todo.list();
-        const open = (todos || []).filter((t) => t.status !== 'done').length;
+        const open = await window.ling.todo.openCount();
         const badge = document.getElementById('capsuleBadge');
         if (badge) {
           badge.hidden = open <= 0;
           badge.textContent = String(open > 99 ? '99+' : open);
         }
-        await this.updateCompactSummary();
+        if (this.mode === 'compact') await this.updateCompactSummary(open);
       } catch (_) {}
     },
 
-    async expandFromUi(tab) {
-      try {
-        if (window.ling && window.ling.panel && !window.ling.__fallback) {
-          await window.ling.panel.expand(tab || this.currentTab || 'home');
-        }
-      } catch (_) {}
-      await this.showExpanded(tab || this.currentTab || 'home');
+    expandFromUi(tab) {
+      return window.ling.panel.expand(tab || this.currentTab || 'home');
     },
 
-    async collapseFromUi() {
-      try {
-        if (window.ling && window.ling.panel && !window.ling.__fallback) {
-          await window.ling.panel.collapse();
-        }
-      } catch (_) {}
-      this.showCompact();
+    collapseFromUi() {
+      return window.ling.panel.collapse();
     },
 
     bindChrome() {
@@ -715,41 +704,12 @@
         try {
           await window.ling.app.notify({ title: '剪贴板已归档', message: msg });
         } catch (_) {}
-        await App.refreshBadge();
-        if (App.mode === 'expanded') await App.refreshCurrent();
+        await App.refreshAfterClipboard();
       }
 
-      async function saveClip() {
-        const clips = (await window.ling.store.get('clips')) || [];
-        clips.unshift({
-          id: 'c_' + Date.now().toString(36),
-          content: text,
-          createdAt: Date.now(),
-          kind: isPaperRef ? 'paper' : isUrl ? 'url' : 'text',
-        });
-        await window.ling.store.set('clips', clips.slice(0, 500));
-        await finish('已存入片段库');
-      }
-
-      async function saveNote() {
-        const title = trimmed.split(/\r?\n/)[0].slice(0, 32) || '剪贴笔记';
-        await window.ling.note.create({ title, content: text });
-        await finish('已存入笔记');
-      }
-
-      async function saveLink() {
-        const url = isUrl ? (trimmed.startsWith('http') ? trimmed : 'https://' + trimmed) : trimmed;
-        await window.ling.link.create({ url, title: previewShort.slice(0, 40) || url });
-        await finish('已收藏链接');
-      }
-
-      async function saveTodo() {
-        await window.ling.todo.create({
-          title: previewShort.slice(0, 60) || '剪贴待办',
-          status: 'today',
-          note: text.slice(0, 500),
-        });
-        await finish('已存为待办');
+      async function archive(action, message) {
+        const n = await window.ling.clip.process([payload.inboxId], action);
+        await finish(n ? message : '这条内容已处理');
       }
 
       /** 二级：仅当用户选择「AI 会话」时才进入，再标 Q/A */
@@ -839,11 +799,11 @@
         if (!body) return;
         body.innerHTML = '';
         const dests = [
-          ['clip', '片段', saveClip, true],
-          ['note', '笔记', saveNote, false],
+          ['clip', '片段', () => archive('clip', '已存入片段库'), true],
+          ['note', '笔记', () => archive('note', '已存入笔记'), false],
         ];
-        if (isUrl) dests.push(['link', '链接', saveLink, false]);
-        dests.push(['todo', '待办', saveTodo, false]);
+        if (isUrl) dests.push(['link', '链接', () => archive('link', '已收藏链接'), false]);
+        dests.push(['todo', '待办', () => archive('todo', '已存为待办'), false]);
         dests.push(['ai', 'AI 会话', openAiLayer, false]);
         dests.push(['ignore', '忽略', () => host.remove(), false]);
 
@@ -901,6 +861,10 @@
 
       on('panel:state', async (payload) => {
         if (!payload) return;
+        if (!this.ready) {
+          this.pendingPanelState = payload;
+          return;
+        }
         if (payload.state === 'expanded') {
           await this.showExpanded(payload.tab || this.currentTab);
         } else if (payload.state === 'compact') {
@@ -936,16 +900,14 @@
           // 收起态：不弹应用内层（系统通知已有）；展开态：叠加分层 UI
           if (this.mode === 'expanded') {
             this.showClipboardToast(payload);
-            if (this.currentTab === 'ailog') this.refreshCurrent();
-            if (this.currentTab === 'home') this.refreshCurrent();
+            if (this.currentTab === 'home') window.HomeView?.refreshInbox();
           }
         } catch (_) {}
       });
 
       on('clipboard:archived', async () => {
         try {
-          await this.refreshBadge();
-          if (this.mode === 'expanded') await this.refreshCurrent();
+          await this.refreshAfterClipboard();
         } catch (_) {}
       });
 
@@ -974,12 +936,6 @@
         }
       });
 
-      const onViewport = () => this.syncModeToViewport();
-      window.addEventListener('resize', onViewport);
-      setTimeout(onViewport, 0);
-      setTimeout(onViewport, 200);
-      setTimeout(onViewport, 500);
-      setTimeout(onViewport, 900);
     },
   };
 

@@ -36,8 +36,27 @@ test('resolveEditor 支持 "exe 参数" 的复合写法（开发态指向 electr
   assert.deepStrictEqual(r.args, [appDir]);
 });
 
-test('resolveEditor 对不存在的路径返回 null（不静默乱指）', () => {
-  assert.strictEqual(ed.resolveEditor('D:\\根本不存在\\xx.exe'), null);
+test('resolveEditor 路径含空格时按整串解析（回归：D:\\Program Files\\…）', () => {
+  const dir = tmpDir('ling panel ');
+  const exe = path.join(dir, 'Ling Mark.exe');
+  fs.writeFileSync(exe, 'fake');
+  const r = ed.resolveEditor(exe);
+  assert.ok(r, '含空格的路径不应被拆成 D:\\Program');
+  assert.strictEqual(r.exe, exe);
+  assert.strictEqual(r.source, 'configured');
+});
+
+test('resolveEditor 对配置错误不静默乱指，而是回退自动探测', () => {
+  const r = ed.resolveEditor('C:\\根本不存在\\xx.exe');
+  // 机器上装了灵墨则回退到 auto/dev，没装则为 null；无论如何不能用错误路径
+  assert.ok(!r || r.source !== 'configured');
+  if (r) assert.ok(fs.existsSync(r.exe));
+});
+
+test('candidatePaths 覆盖自定义盘符与 per-user 安装目录', () => {
+  const list = ed.candidatePaths();
+  assert.ok(list.includes('D:\\Program Files\\LingMark\\LingMark.exe'));
+  assert.ok(list.some((p) => p.toLowerCase().includes('programs\\lingmark')));
 });
 
 test('resolveEditor 留空时走自动探测', () => {

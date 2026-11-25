@@ -222,7 +222,6 @@ class PanelWindow {
       this.win.show();
       this.win.focus();
       this.win.moveTop();
-      this.syncRendererState(this.state);
       clearWindowShape(this.win);
       disableWindowsShadow(this.win);
       setTimeout(() => {
@@ -276,9 +275,6 @@ class PanelWindow {
       this.win = null;
     });
 
-    this.win.webContents.on('did-finish-load', () => {
-      this.syncRendererState(this.state);
-    });
 
     this.win.webContents.on('render-process-gone', (_e, details) => {
       console.error('[panel] renderer gone', details);
@@ -966,50 +962,8 @@ class PanelWindow {
     this.applyTopmost(true);
   }
 
-  /**
-   * 强制把渲染层切到对应模式：事件 + executeJavaScript 双通道
-   */
   syncRendererState(state, tab) {
-    if (!this.win || this.win.isDestroyed()) return;
-    const payload = { state, tab: tab || this.settings.defaultTab || 'home' };
-    try {
-      this.win.webContents.send('panel:state', payload);
-    } catch (_) {}
-    const script = `
-      (function(){
-        try {
-          var c = document.getElementById('compact');
-          var e = document.getElementById('expanded');
-          if (${JSON.stringify(state)} === 'expanded') {
-            document.body.dataset.mode = 'expanded';
-            if (c) { c.hidden = true; c.style.display = 'none'; }
-            if (e) { e.hidden = false; e.style.display = 'flex'; }
-            if (window.App) {
-              window.App.mode = 'expanded';
-              if (window.App.showExpanded) window.App.showExpanded(${JSON.stringify(payload.tab)});
-            }
-          } else {
-            document.body.dataset.mode = 'compact';
-            if (e) { e.hidden = true; e.style.display = 'none'; }
-            if (c) { c.hidden = false; c.style.display = 'flex'; }
-            if (window.App) {
-              window.App.mode = 'compact';
-              if (window.App.showCompact) window.App.showCompact();
-            }
-          }
-          return {
-            mode: window.App && window.App.mode,
-            body: document.body.dataset.mode,
-            cDisplay: c && getComputedStyle(c).display,
-            eDisplay: e && getComputedStyle(e).display,
-            h: window.innerHeight
-          };
-        } catch (err) { return { error: String(err && err.message) }; }
-      })();
-    `;
-    this.win.webContents.executeJavaScript(script).then((r) => {
-      console.log('[panel] sync', JSON.stringify(r));
-    }).catch((e) => console.error('[panel] sync failed', e.message));
+    this.send('panel:state', { state, tab: tab || this.settings.defaultTab || 'home' });
   }
 
   async expand(tab) {
@@ -1050,10 +1004,10 @@ class PanelWindow {
     this.inputFocus = false;
     this.edgeHidden = false;
     const b = this.compactBounds();
+    this.win.setMinimumSize(0, 0);
     this.syncRendererState('compact');
     this._setBoundsImmediate(b);
     this.win.setResizable(false);
-    this.win.setMinimumSize(0, 0);
     this.win.setSkipTaskbar(true);
     this.applyTopmost(true);
     this.win.showInactive();
@@ -1104,7 +1058,6 @@ class PanelWindow {
 
   applySettings(nextSettings) {
     const merged = { ...this.settings, ...(nextSettings || {}) };
-    this.store.setSection('settings', merged);
     if (!this.win || this.win.isDestroyed()) return;
 
     if (merged.alwaysOnTop !== false) {

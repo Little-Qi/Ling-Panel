@@ -124,6 +124,7 @@ async function loadFallbackApi() {
     activeElement: null,
   };
   vm.createContext(sandbox);
+  vm.runInContext(fs.readFileSync(path.join(root, 'src/shared/workspace-lists.js'), 'utf8'), sandbox);
 
   // app.js 的 boot 依赖 LingUtil
   const utilCode = fs.readFileSync(path.join(root, 'src/renderer/lib/util.js'), 'utf8');

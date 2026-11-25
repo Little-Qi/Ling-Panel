@@ -6,6 +6,7 @@
   const { el, expandableText, formatTime } = LingUtil;
 
   let overlay = null;
+  let paintVersion = 0;
   let state = {
     query: '',
     tab: 'inbox', // inbox | clips
@@ -26,15 +27,8 @@
     }
   }
 
-  async function loadAll() {
-    const [inbox, clips] = await Promise.all([
-      window.ling.store.get('clipInbox'),
-      window.ling.store.get('clips'),
-    ]);
-    return {
-      inbox: Array.isArray(inbox) ? inbox : [],
-      clips: Array.isArray(clips) ? clips : [],
-    };
+  function readTab() {
+    return window.ling.store.get(state.tab === 'inbox' ? 'clipInbox' : 'clips');
   }
 
   function matchItem(c, q) {
@@ -42,69 +36,11 @@
     return String(c.content || '').toLowerCase().includes(q.toLowerCase());
   }
 
-  async function applyInboxAction(ids, action) {
-    const data = await loadAll();
-    const idSet = new Set(ids);
-    const picked = data.inbox.filter((x) => idSet.has(x.id));
-    const rest = data.inbox.filter((x) => !idSet.has(x.id));
-    if (action === 'drop') {
-      await window.ling.store.set('clipInbox', rest);
-      return picked.length;
-    }
-    if (action === 'copy') {
-      const ok = await copyText(picked.map((p) => p.content).join('\n\n---\n\n'));
-      return ok ? picked.length : 0;
-    }
-    if (action === 'clip') {
-      const list = picked.map((c) => ({
-        id: 'c_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-        content: c.content,
-        createdAt: c.createdAt || Date.now(),
-        kind: 'text',
-      }));
-      await window.ling.store.set('clips', [...list, ...data.clips].slice(0, 500));
-      await window.ling.store.set('clipInbox', rest);
-      return picked.length;
-    }
-    if (action === 'note') {
-      for (const c of picked) {
-        const preview = String(c.content || '').replace(/\s+/g, ' ').trim().slice(0, 32);
-        await window.ling.note.create({
-          title: preview || '剪贴笔记',
-          content: c.content,
-        });
-      }
-      await window.ling.store.set('clipInbox', rest);
-      return picked.length;
-    }
-    if (action === 'todo') {
-      for (const c of picked) {
-        const preview = String(c.content || '').replace(/\s+/g, ' ').trim().slice(0, 60);
-        await window.ling.todo.create({
-          title: preview || '剪贴待办',
-          status: 'today',
-          note: String(c.content || '').slice(0, 500),
-        });
-      }
-      await window.ling.store.set('clipInbox', rest);
-      return picked.length;
-    }
-    return 0;
-  }
-
-  async function applyClipAction(ids, action) {
-    const data = await loadAll();
-    const idSet = new Set(ids);
-    const picked = data.clips.filter((x) => idSet.has(x.id));
-    if (action === 'copy') {
-      const ok = await copyText(picked.map((p) => p.content).join('\n\n---\n\n'));
-      return ok ? picked.length : 0;
-    }
-    if (action === 'delete') {
-      await window.ling.store.set('clips', data.clips.filter((x) => !idSet.has(x.id)));
-      return picked.length;
-    }
-    return 0;
+  async function copySelected(section, ids) {
+    const selected = new Set(ids);
+    const picked = (await window.ling.store.get(section)).filter((item) => selected.has(item.id));
+    const ok = await copyText(picked.map((item) => item.content).join('\n\n---\n\n'));
+    return ok ? picked.length : 0;
   }
 
   /**
@@ -119,6 +55,7 @@
   }
 
   function close() {
+    paintVersion++;
     if (overlay) {
       overlay.remove();
       overlay = null;
@@ -141,11 +78,12 @@
     const body = overlay.querySelector('.clip-mgr-body');
     const stats = overlay.querySelector('.clip-mgr-stats');
     if (!body) return;
+    const version = ++paintVersion;
+    const rows = await readTab();
+    if (version !== paintVersion) return;
     body.innerHTML = '';
-
-    const data = await loadAll();
     const q = state.query.trim();
-    const list = (state.tab === 'inbox' ? data.inbox : data.clips).filter((c) => matchItem(c, q));
+    const list = rows.filter((c) => matchItem(c, q));
 
     // 选中集里不在当前列表的先清掉
     const live = new Set(list.map((x) => x.id));
@@ -157,7 +95,7 @@
     syncCount();
 
     if (stats) {
-      const total = state.tab === 'inbox' ? data.inbox.length : data.clips.length;
+      const total = rows.length;
       stats.textContent = q ? `${list.length} / ${total}` : `${total} 条`;
     }
 
@@ -208,7 +146,7 @@
                   class: 'btn sm',
                   text: '片段',
                   onclick: async () => {
-                    await applyInboxAction([c.id], 'clip');
+                    await window.ling.clip.process([c.id], 'clip');
                     await paint();
                     if (global.App) App.refreshCurrent();
                   },
@@ -217,7 +155,7 @@
                   class: 'btn sm',
                   text: '笔记',
                   onclick: async () => {
-                    await applyInboxAction([c.id], 'note');
+                    await window.ling.clip.process([c.id], 'note');
                     await paint();
                     if (global.App) App.refreshCurrent();
                   },
@@ -226,7 +164,7 @@
                   class: 'btn sm ghost',
                   text: '丢弃',
                   onclick: async () => {
-                    await applyInboxAction([c.id], 'drop');
+                    await window.ling.clip.process([c.id], 'drop');
                     await paint();
                     if (global.App) App.refreshCurrent();
                   },
@@ -237,7 +175,7 @@
                   class: 'btn sm ghost',
                   text: '删除',
                   onclick: async () => {
-                    await applyClipAction([c.id], 'delete');
+                    await window.ling.clip.process([c.id], 'deleteClip');
                     await paint();
                     if (global.App) App.refreshCurrent();
                   },
@@ -258,14 +196,17 @@
         window.ling.app.notify({ title: '先勾选条目', message: '' });
         return;
       }
-      let n = 0;
-      if (state.tab === 'inbox') n = await applyInboxAction(ids, action);
-      else if (action === 'delete') n = await applyClipAction(ids, 'delete');
-      else if (action === 'copy') n = await applyClipAction(ids, 'copy');
-      state.selected = new Set();
-      await paint();
-      if (global.App) App.refreshCurrent();
-      window.ling.app.notify({ title: label, message: `${n} 条` });
+      try {
+        const n = action === 'copy'
+          ? await copySelected(state.tab === 'inbox' ? 'clipInbox' : 'clips', ids)
+          : await window.ling.clip.process(ids, action === 'delete' ? 'deleteClip' : action);
+        for (const id of ids) state.selected.delete(id);
+        await paint();
+        if (action !== 'copy' && global.App) App.refreshCurrent();
+        window.ling.app.notify({ title: label, message: `${n} 条` });
+      } catch (err) {
+        window.ling.app.notify({ title: '处理失败，可重试', message: err.message });
+      }
     }
 
     return el('div', { class: 'clip-mgr-bulk' }, [
@@ -284,8 +225,7 @@
           class: 'btn sm ghost',
           text: '全选',
           onclick: async () => {
-            const data = await loadAll();
-            const list = (state.tab === 'inbox' ? data.inbox : data.clips).filter((c) =>
+            const list = (await readTab()).filter((c) =>
               matchItem(c, state.query.trim())
             );
             state.selected = new Set(list.map((x) => x.id));
@@ -350,11 +290,13 @@
       },
     });
 
-    const stats = el('span', { class: 'muted', text: '' });
+    const stats = el('span', { class: 'muted clip-mgr-stats', text: '' });
     const bulkHost = el('div');
     const body = el('div', { class: 'clip-mgr-body' });
 
     async function renderChrome() {
+      tabInbox.classList.toggle('primary', state.tab === 'inbox');
+      tabClips.classList.toggle('primary', state.tab === 'clips');
       bulkHost.innerHTML = '';
       bulkHost.appendChild(bulkBar());
       syncCount();

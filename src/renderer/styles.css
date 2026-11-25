@@ -121,24 +121,6 @@ body[data-mode="expanded"] #expanded {
   display: flex;
 }
 
-@media (min-height: 140px) {
-  #compact {
-    display: none !important;
-  }
-  #expanded {
-    display: flex !important;
-  }
-}
-
-@media (max-height: 90px) {
-  #expanded {
-    display: none !important;
-  }
-  #compact {
-    display: flex !important;
-  }
-}
-
 /* ===== 收起胶囊 ===== */
 
 #compact {
@@ -1916,6 +1898,7 @@ body[data-theme='dawn'][data-mood='night'] .capsule {
   background: linear-gradient(270deg, var(--bg) 20%, transparent);
 }
 .shot-strip {
+  touch-action: pan-y;
   display: flex;
   gap: 16px;
   overflow-x: auto;

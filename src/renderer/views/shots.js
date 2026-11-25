@@ -23,7 +23,7 @@
   }
 
   /** 选一张截图后的操作条 */
-  function actionBar(shot, notes, onDone) {
+  function actionBar(shot, onDone) {
     if (!shot) {
       return el('div', { class: 'muted', style: 'padding:10px 2px', text: '点一张截图查看操作' });
     }
@@ -34,7 +34,7 @@
       el('button', {
         class: 'btn sm primary',
         text: '存进笔记',
-        onclick: () => pickNote(shot, notes, onDone),
+        onclick: () => pickNote(shot, onDone),
       }),
       el('button', {
         class: 'btn sm',
@@ -73,7 +73,8 @@
   }
 
   /** 选一篇笔记把截图塞进去 */
-  async function pickNote(shot, notes, onDone) {
+  async function pickNote(shot, onDone) {
+    const { items: notes } = await window.ling.note.page({ limit: Infinity });
     let targetId = null;
     let createNew = false;
 
@@ -86,7 +87,6 @@
       targetId = createNew ? null : sel.value;
     });
 
-    const host = el('div', { class: 'shot-picker' });
     const overlay = el('div', {
       class: 'shot-picker-overlay',
       onclick: (e) => {
@@ -110,8 +110,7 @@
         ]),
       ]),
     ]);
-    host.appendChild(overlay);
-    document.body.appendChild(host);
+    document.body.appendChild(overlay);
     const first = notes[0];
     if (first) {
       sel.value = first.id;
@@ -134,8 +133,7 @@
       });
       window.ling.app.notify({ title: '已新建笔记', message: note.title });
     } else {
-      const notes = await window.ling.note.list();
-      const n = notes.find((x) => x.id === targetId);
+      const n = await window.ling.note.get(targetId);
       if (!n) {
         window.ling.app.notify({ title: '存入失败', message: '找不到目标笔记' });
         return;
@@ -150,10 +148,9 @@
     root.innerHTML = '';
     root.className = 'view ime-safe';
 
-    const [info, shots, notes] = await Promise.all([
+    const [info, shots] = await Promise.all([
       window.ling.shot.info().catch(() => null),
       window.ling.shot.list().catch(() => []),
-      window.ling.note.list().catch(() => []),
     ]);
 
     const dir = (info && info.dir) || '';
@@ -161,6 +158,12 @@
     if (selectedId && !list.some((s) => s.id === selectedId)) selectedId = null;
 
     const strip = el('div', { class: 'shot-strip' });
+    const actions = el('div', { class: 'shot-actions' });
+    let activeCard;
+    function showActions(shot) {
+      actions.innerHTML = '';
+      actions.appendChild(actionBar(shot, () => renderShots(root)));
+    }
     const line = el('div', { class: 'shot-rope' });
 
     if (!list.length) {
@@ -176,16 +179,21 @@
             class: 'shot-card' + (selected ? ' is-selected' : ''),
             title: `${s.name}\n${fmtShotTime(s.at)}`,
             onclick: () => {
-              selectedId = selected ? null : s.id;
-              renderShots(root);
+              const select = selectedId !== s.id;
+              activeCard?.classList.remove('is-selected');
+              selectedId = select ? s.id : null;
+              activeCard = select ? card : null;
+              activeCard?.classList.add('is-selected');
+              showActions(select ? s : null);
             },
           },
           [
             el('div', { class: 'shot-clip' }),
-            el('img', { class: 'shot-thumb', src: fileUrl(s.path), loading: 'lazy', alt: s.name }),
+            el('img', { class: 'shot-thumb', src: fileUrl(s.path), draggable: 'false', loading: 'lazy', alt: s.name }),
             el('div', { class: 'shot-meta', text: fmtShotTime(s.at) }),
           ]
         );
+        if (selected) activeCard = card;
         strip.appendChild(card);
       }
     }
@@ -196,37 +204,29 @@
 
     // 晾衣绳没有系统滚动条：按住拖拽平移，滚轮横向滚动
     function bindPan(el) {
-      let dragging = false;
       let moved = false;
       let sx = 0;
       let sl = 0;
-      el.addEventListener('mousedown', (e) => {
-        if (e.button !== 0) return;
-        dragging = true;
+      let pointer = null;
+      el.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0 || pointer !== null) return;
+        pointer = e.pointerId;
+        e.target.setPointerCapture(pointer);
         moved = false;
-        sx = e.screenX;
+        sx = e.clientX;
         sl = el.scrollLeft;
         el.classList.add('is-dragging');
       });
-      window.addEventListener('mousemove', (e) => {
-        if (!dragging) return;
-        const dx = e.screenX - sx;
-        if (Math.abs(dx) > 3) {
-          moved = true;
-          el.scrollLeft = sl - dx;
-        }
+      el.addEventListener('pointermove', (e) => {
+        if (e.pointerId !== pointer) return;
+        const dx = e.clientX - sx;
+        if (Math.abs(dx) > 3) moved = true;
+        if (moved) el.scrollLeft = sl - dx;
       });
-      window.addEventListener('mouseup', () => {
-        if (!dragging) return;
-        dragging = false;
+      el.addEventListener('lostpointercapture', (e) => {
+        if (e.pointerId !== pointer) return;
+        pointer = null;
         el.classList.remove('is-dragging');
-        if (moved) {
-          // 拖过就不要触发卡片的点击选中
-          el.dataset.suppressClick = '1';
-          setTimeout(() => {
-            delete el.dataset.suppressClick;
-          }, 0);
-        }
       });
       el.addEventListener(
         'wheel',
@@ -239,7 +239,7 @@
         { passive: false }
       );
       el.addEventListener('click', (e) => {
-        if (el.dataset.suppressClick) {
+        if (moved && e.detail !== 0) {
           e.stopPropagation();
           e.preventDefault();
         }
@@ -289,12 +289,12 @@
       }),
     ]);
 
-    const selected = list.find((s) => s.id === selectedId) || null;
+    showActions(list.find((s) => s.id === selectedId));
 
     root.append(
       toolbar,
       el('div', { class: 'shot-clothesline' }, [line, strip]),
-      el('div', { class: 'shot-actions' }, [actionBar(selected, notes || [], refresh)])
+      actions
     );
 
     bindPan(strip);

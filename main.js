@@ -13,10 +13,12 @@ try {
   );
 } catch (_) {}
 
-const { Store, dataDir, storePath, deepMerge, DEFAULTS } = require('./src/main/store');
+const { Store, dataDir, storePath, DEFAULTS } = require('./src/main/store');
 const { PanelWindow } = require('./src/main/window-manager');
+const { clipSummary, notePage, homeOverview, groupPages } = require('./src/shared/workspace-lists');
 const { startNotifyServer } = require('./src/main/notify-server');
 const paperLib = require('./src/main/paper-lib');
+const paperJobs = require('./src/main/paper-jobs');
 const aiLog = require('./src/main/ai-log');
 const clipNotify = require('./src/main/clip-notify');
 const activityTracker = require('./src/main/activity-tracker');
@@ -119,7 +121,63 @@ if (!gotLock) {
     }
   }
 
+  async function openWorkspace() {
+    const { dialog, shell } = require('electron');
+    const fs = require('fs');
+    try {
+      store.ensureSeed();
+      return true;
+    } catch (err) {
+      let file;
+      try {
+        file = storePath();
+      } catch (error) {
+        dialog.showErrorBox('无法访问工作区目录', error.message);
+        return false;
+      }
+      let detail = err.message;
+      for (;;) {
+        const backup = file + '.bak';
+        const choices = fs.existsSync(backup) ? ['恢复最近快照'] : [];
+        choices.push('选择备份文件', '打开数据目录', '使用空工作区', '退出');
+        const { response } = await dialog.showMessageBox({
+          type: 'warning', title: '工作区需要恢复', message: '无法载入工作区',
+          detail: `${file}\n${detail}\n恢复或新建时，原文件会保存在同目录的 .bak- 副本中。`,
+          buttons: choices, cancelId: choices.length - 1,
+        });
+        try {
+          switch (choices[response]) {
+            case '打开数据目录':
+              await shell.openPath(dataDir());
+              continue;
+            case '选择备份文件': {
+              const picked = await dialog.showOpenDialog({ title: '选择工作区备份', defaultPath: dataDir(), properties: ['openFile'] });
+              if (picked.canceled || !picked.filePaths[0]) continue;
+              store.importFile(picked.filePaths[0]);
+              return true;
+            }
+            case '恢复最近快照':
+              store.importFile(backup);
+              return true;
+            case '使用空工作区':
+              store.replace(structuredClone(DEFAULTS));
+              return true;
+            default:
+              return false;
+          }
+        } catch (error) {
+          detail = error.message;
+        }
+      }
+    }
+  }
+
   function registerIpc() {
+    ipcMain.handle('clip:process', (_e, ids, action) => clipNotify.applyInboxAction(
+      store, ids, action, (writeChars) => activityTracker.applySample(store.getSection('activity'), { writeChars })
+    ));
+    ipcMain.handle('clip:summary', () => clipSummary(store));
+    ipcMain.handle('home:overview', () => homeOverview(store));
     ipcMain.handle('store:get', (_e, key) => store.getSection(key));
     ipcMain.handle('store:set', (_e, key, value) => {
       const next = store.setSection(key, value);
@@ -129,7 +187,7 @@ if (!gotLock) {
       if (key === 'settings') {
         // 开关全局键数钩子
         try {
-          const want = !!(value && value.enableKeyHook === true);
+          const want = next.settings.enableKeyHook === true;
           if (want && !keyHook) {
             keyHook = typingCounter.startKeyHook(require('./src/main/store').dataDir());
             console.log('[typing] global key hook on');
@@ -171,6 +229,7 @@ if (!gotLock) {
       });
       if (result.canceled || !result.filePath) return { ok: false, canceled: true };
       try {
+        store.flush();
         fs.copyFileSync(storePath(), result.filePath);
         return { ok: true, path: result.filePath };
       } catch (err) {
@@ -179,7 +238,6 @@ if (!gotLock) {
     });
     ipcMain.handle('store:import-workspace', async () => {
       const { dialog } = require('electron');
-      const fs = require('fs');
       const result = await dialog.showOpenDialog({
         title: '导入工作区（覆盖当前数据）',
         properties: ['openFile'],
@@ -187,15 +245,8 @@ if (!gotLock) {
       });
       if (result.canceled || !result.filePaths[0]) return { ok: false, canceled: true };
       try {
-        const raw = JSON.parse(fs.readFileSync(result.filePaths[0], 'utf8'));
-        const merged = deepMerge(DEFAULTS, raw);
-        fs.mkdirSync(dataDir(), { recursive: true });
-        const dest = storePath();
-        const bak = dest + '.bak-' + Date.now();
-        if (fs.existsSync(dest)) fs.copyFileSync(dest, bak);
-        fs.writeFileSync(dest, JSON.stringify(merged, null, 2), 'utf8');
-        store.cache = merged;
-        return { ok: true, path: result.filePaths[0], backup: fs.existsSync(bak) ? bak : '' };
+        const backup = store.importFile(result.filePaths[0]);
+        return { ok: true, path: result.filePaths[0], backup };
       } catch (err) {
         return { ok: false, error: String(err.message || err) };
       }
@@ -243,8 +294,14 @@ if (!gotLock) {
     });
 
     ipcMain.handle('todo:list', () => store.getSection('todos') || []);
+    ipcMain.handle('todo:board', (_e, pages, expandDone) => groupPages(store.getSection('todos'), 'status', pages, expandDone));
+    ipcMain.handle('todo:open-count', () => store.getSection('todos').reduce((n, t) => n + (t.status !== 'done'), 0));
+    ipcMain.handle('todo:clear-done', () => {
+      store.setSection('todos', store.getSection('todos').filter((t) => t.status !== 'done'));
+      return true;
+    });
     ipcMain.handle('todo:create', (_e, payload) => {
-      const todos = store.getSection('todos') || [];
+      const todos = store.getSection('todos').slice();
       const item = {
         id: uid('todo'),
         title: String(payload.title || '').trim() || '未命名待办',
@@ -260,7 +317,7 @@ if (!gotLock) {
       return item;
     });
     ipcMain.handle('todo:update', (_e, id, patch) => {
-      const todos = store.getSection('todos') || [];
+      const todos = store.getSection('todos').slice();
       const idx = todos.findIndex((t) => t.id === id);
       if (idx < 0) return null;
       todos[idx] = { ...todos[idx], ...patch, updatedAt: Date.now() };
@@ -276,12 +333,14 @@ if (!gotLock) {
     ipcMain.handle('todo:set-workflows', (_e, workflows) => store.setSection('workflows', workflows));
 
     ipcMain.handle('note:list', () => store.getSection('notes') || []);
+    ipcMain.handle('note:page', (_e, opts) => notePage(store.getSection('notes'), opts));
+    ipcMain.handle('note:get', (_e, id) => store.getSection('notes').find((n) => n.id === id));
     ipcMain.handle('note:create', (_e, payload) => {
       try {
         const len = String((payload && (payload.content || payload.title)) || '').length;
         if (len) activity.addWriteChars(len);
       } catch (_) {}
-      const notes = store.getSection('notes') || [];
+      const notes = store.getSection('notes').slice();
       const item = {
         id: uid('note'),
         title: String(payload.title || '').trim() || deriveTitle(payload.content || '') || '未命名笔记',
@@ -295,7 +354,7 @@ if (!gotLock) {
       return item;
     });
     ipcMain.handle('note:update', (_e, id, patch) => {
-      const notes = store.getSection('notes') || [];
+      const notes = store.getSection('notes').slice();
       const idx = notes.findIndex((n) => n.id === id);
       if (idx < 0) return null;
       notes[idx] = { ...notes[idx], ...patch, updatedAt: Date.now() };
@@ -329,7 +388,9 @@ if (!gotLock) {
       if (!ed) {
         return {
           ok: false,
-          error: '找不到外部 Markdown 编辑器（灵墨）。请在「设置 → 外部编辑器」里指定路径。',
+          error:
+            '没找到灵墨 LingMark。请在「设置 → 外部编辑器」里填写 LingMark.exe 的完整路径' +
+            '（路径含空格可直接粘贴，不必加引号），或点「自动探测」。',
         };
       }
       const notes = store.getSection('notes') || [];
@@ -346,8 +407,8 @@ if (!gotLock) {
     });
 
     ipcMain.handle('link:list', () => store.getSection('links') || []);
+    ipcMain.handle('link:groups', (_e, pages) => groupPages(store.getSection('links'), 'group', pages));
     ipcMain.handle('link:create', async (_e, payload) => {
-      const links = store.getSection('links') || [];
       const url = String(payload.url || '').trim();
       if (!url) throw new Error('链接不能为空');
       const item = {
@@ -359,12 +420,13 @@ if (!gotLock) {
         createdAt: Date.now(),
       };
       if (!item.title) item.title = await fetchTitleSafe(url);
+      const links = store.getSection('links').slice();
       links.unshift(item);
       store.setSection('links', links);
       return item;
     });
     ipcMain.handle('link:update', (_e, id, patch) => {
-      const links = store.getSection('links') || [];
+      const links = store.getSection('links').slice();
       const idx = links.findIndex((l) => l.id === id);
       if (idx < 0) return null;
       links[idx] = { ...links[idx], ...patch };
@@ -393,10 +455,9 @@ if (!gotLock) {
       venues: paperLib.VENUES,
       archiveMode: (store.getSection('settings') || {}).paperArchiveMode || 'copy',
     }));
-    ipcMain.handle('paper:scan', () => {
+    ipcMain.handle('paper:scan', async () => {
       try {
-        paperLib.ensurePaperTree(paperRoot());
-        const r = paperLib.scanDownloads(paperRoot(), downloadsDir());
+        const r = await paperJobs.run('scanDownloads', paperRoot(), downloadsDir());
         return {
           ok: true,
           items: r.items,
@@ -419,24 +480,19 @@ if (!gotLock) {
         };
       }
     });
-    ipcMain.handle('paper:ignore', (_e, payload) => {
+    async function ignorePapers(items) {
       try {
-        const root = paperRoot();
-        paperLib.addIgnore(root, {
-          sourcePath: payload && payload.sourcePath,
-          fp: (payload && (payload.fingerprint || payload.fp)) || '',
-          fileName: payload && payload.fileName,
-          reason: 'manual',
-        });
-        return { ok: true, ignored: paperLib.listIgnored(root) };
+        return { ok: true, ignored: await paperJobs.run('addIgnores', paperRoot(), items) };
       } catch (err) {
         return { ok: false, error: String(err.message || err) };
       }
-    });
-    ipcMain.handle('paper:unignore', (_e, payload) => {
+    }
+    ipcMain.handle('paper:ignore', (_e, payload) => ignorePapers([payload]));
+    ipcMain.handle('paper:ignore-many', (_e, items) => ignorePapers(items));
+    ipcMain.handle('paper:unignore', async (_e, payload) => {
       try {
         const root = paperRoot();
-        paperLib.removeIgnore(root, {
+        await paperJobs.run('removeIgnore', root, {
           sourcePath: payload && payload.sourcePath,
           fp: (payload && (payload.fingerprint || payload.fp)) || '',
         });
@@ -446,9 +502,9 @@ if (!gotLock) {
       }
     });
     ipcMain.handle('paper:list-ignored', () => paperLib.listIgnored(paperRoot()));
-    ipcMain.handle('paper:archive', (_e, payload) => {
+    ipcMain.handle('paper:archive', async (_e, payload) => {
       try {
-        return paperLib.archivePaper(paperRoot(), {
+        return await paperJobs.run('archivePaper', paperRoot(), {
           ...payload,
           mode: (store.getSection('settings') || {}).paperArchiveMode || 'copy',
         });
@@ -456,24 +512,20 @@ if (!gotLock) {
         return { ok: false, error: String(err.message || err) };
       }
     });
-    ipcMain.handle('paper:archive-many', (_e, list) => {
+    ipcMain.handle('paper:archive-many', async (_e, list) => {
       const mode = (store.getSection('settings') || {}).paperArchiveMode || 'copy';
-      const results = [];
-      for (const item of list || []) {
-        try {
-          results.push(paperLib.archivePaper(paperRoot(), { ...item, mode }));
-        } catch (err) {
-          results.push({ ok: false, error: String(err.message || err), sourcePath: item && item.sourcePath });
-        }
-      }
-      return results;
-    });
-    ipcMain.handle('paper:list', () => paperLib.listLibrary(paperRoot()));
-    ipcMain.handle('paper:rescan-summary', () => paperLib.rescanSummary(paperRoot()));
-    ipcMain.handle('paper:pdf-hints', (_e, filePath) => {
       try {
-        const { extractPdfHints } = require('./src/main/pdf-hints');
-        return extractPdfHints(filePath) || {};
+        const result = await paperJobs.run('archivePapers', paperRoot(), (list || []).map((item) => ({ ...item, mode })));
+        return result.results.map((row) => row.ok ? { ...row, summary: result.summary } : row);
+      } catch (err) {
+        return (list || []).map((item) => ({ ok: false, error: err.message, sourcePath: item?.sourcePath }));
+      }
+    });
+    ipcMain.handle('paper:list', () => paperJobs.run('listLibrary', paperRoot()));
+    ipcMain.handle('paper:rescan-summary', () => paperJobs.run('rescanSummary', paperRoot()));
+    ipcMain.handle('paper:pdf-hints', async (_e, filePath) => {
+      try {
+        return await paperJobs.run('pdfHints', filePath);
       } catch (err) {
         return { error: String(err.message || err) };
       }
@@ -686,30 +738,22 @@ if (!gotLock) {
         if (s.clipboardWatch === false) return;
         const text = clipboard.readText('clipboard') || '';
         if (!text || text === last || text.trim().length < 2 || text.length > 20000) return;
-        last = text;
         const payload = {
+          inboxId: uid('in'),
           text,
           at: Date.now(),
           paperRef: detectPaperRef(text),
         };
 
-        // 摘录/阅读字量：复制即计入
-        try {
-          activity.addReadChars(String(text).length);
-        } catch (_) {}
-
-        // 静默写入待归档收件箱（默认无通知，有空再整理）
-        try {
-          const inbox = (storeRef.getSection('clipInbox') || []).slice();
-          inbox.unshift({
-            id: uid('in'),
-            content: text,
-            createdAt: Date.now(),
-            paperRef: payload.paperRef,
-            status: 'pending',
-          });
-          storeRef.setSection('clipInbox', inbox.slice(0, 300));
-        } catch (_) {}
+        const inbox = storeRef.getSection('clipInbox') || [];
+        storeRef.save({
+          clipInbox: [{
+            id: payload.inboxId, content: text, createdAt: payload.at,
+            paperRef: payload.paperRef, status: 'pending',
+          }, ...inbox.slice(0, 299)],
+          activity: activityTracker.applySample(storeRef.getSection('activity'), { readChars: text.length }),
+        });
+        last = text;
 
         // 仅在设置打开时弹系统通知
         if (s.clipboardNotify === true) {
@@ -770,13 +814,13 @@ if (!gotLock) {
     }
   });
 
-  app.whenReady().then(() => {
+  app.whenReady().then(async () => {
     if (process.platform === 'win32') {
       app.setAppUserModelId('com.lingpanel.app');
     }
 
+    if (!(await openWorkspace())) return app.quit();
     registerIpc();
-    store.ensureSeed();
     activity.start();
 
     // 全局键数钩子：默认关闭，避免杀软误报；开启后才常驻
@@ -854,6 +898,12 @@ if (!gotLock) {
     }
   });
 
+  app.on('before-quit', (event) => {
+    if (!paperJobs.busy()) return;
+    event.preventDefault();
+    paperJobs.drain().then(() => app.quit());
+  });
+
   app.on('will-quit', () => {
     globalShortcut.unregisterAll();
     if (clipTimer) clearInterval(clipTimer);
@@ -866,6 +916,7 @@ if (!gotLock) {
     } catch (_) {}
     try {
       activity.stop();
+      store.flush();
     } catch (_) {}
     if (notifyServer) notifyServer.close();
   });

@@ -275,6 +275,7 @@ class ActivityTracker {
     this._candidateApp = '';
     this._lastProbedApp = '';
     this._probeTick = 0;
+    this._generation = 0;
   }
 
   load() {
@@ -327,8 +328,18 @@ class ActivityTracker {
   }
 
   async tick() {
+    const generation = this._generation;
     const now = Date.now();
     const { credited } = this.sampleActive(this.intervalMs);
+    if (!credited) {
+      this._probeTick = 0;
+      this._candidateApp = this._stableApp = this._lastProbedApp = '';
+      const previous = this.store.getSection('activity');
+      if (previous && previous.date && previous.date !== dayKey(new Date(now))) {
+        return summarize(this.rolloverDayIfNeeded());
+      }
+      return summarize(previous);
+    }
 
     // 前台进程探测有进程创建成本：隔次探测，中间沿用上次结果
     this._probeTick += 1;
@@ -339,6 +350,7 @@ class ActivityTracker {
       } catch (_) {
         app = this._lastProbedApp;
       }
+      if (generation !== this._generation) return;
       this._lastProbedApp = app;
     }
     const usable = app && !IGNORED_APPS.has(app) ? app : '';
@@ -370,7 +382,7 @@ class ActivityTracker {
   }
 
   insights() {
-    return insightsPayload(this.store.getSection('activity'));
+    return insightsPayload(this.load());
   }
 
   start() {
@@ -382,6 +394,7 @@ class ActivityTracker {
   }
 
   stop() {
+    this._generation += 1;
     if (this._timer) clearInterval(this._timer);
     this._timer = null;
   }

@@ -7,6 +7,7 @@
 (function (global) {
   const marked = global.marked;
   const DOMPurify = global.DOMPurify;
+  const katex = global.katex;
 
   function escapeHtml(text) {
     return String(text == null ? '' : text)
@@ -24,6 +25,201 @@
     if (/^data:image\/(png|jpe?g|gif|webp);base64,/i.test(s)) return s;
     if (/^[a-z][a-z0-9+.-]*:/i.test(s) && !/^https?:|^mailto:|^file:/i.test(s)) return '#';
     return s;
+  }
+
+  /* ── 数学公式 ────────────────────────────────────────────────
+   * 大模型常用的 \(...\)、\[...\]、$...$、$$...$$ 都识别。
+   * 先把公式抠出来换成占位符，避免 marked 把反斜杠、下划线、星号吃掉；
+   * 等 DOMPurify 净化完再交给 KaTeX 渲染（MathML 输出，不依赖字体文件）。
+   */
+  const MATH_TOKEN_PREFIX = '@@LINGMATH';
+
+  function mathToken(index) {
+    return MATH_TOKEN_PREFIX + index + '@@';
+  }
+
+  function findBacktickClose(text, from, len) {
+    let j = from;
+    while (j < text.length) {
+      if (text[j] !== '`') {
+        j += 1;
+        continue;
+      }
+      let n = 0;
+      while (text[j + n] === '`') n += 1;
+      if (n === len) return j;
+      j += n;
+    }
+    return -1;
+  }
+
+  function findDollarClose(text, from) {
+    for (let j = from; j < text.length; j += 1) {
+      const ch = text[j];
+      if (ch === '\n') return -1;
+      if (ch === '\\') {
+        j += 1;
+        continue;
+      }
+      if (ch === '$') {
+        if (j === from) continue;
+        if (/\s/.test(text[j - 1])) return -1;
+        return j;
+      }
+    }
+    return -1;
+  }
+
+  /** 把源码里的公式段换成占位符，返回 { text, segments } */
+  function protectMath(source) {
+    const s = String(source == null ? '' : source);
+    const segments = [];
+    let out = '';
+    let i = 0;
+    let inFence = false;
+    let fenceChar = '';
+    let fenceLen = 0;
+    let lineStart = 0;
+
+    const lineEnd = (pos) => {
+      const nl = s.indexOf('\n', pos);
+      return nl === -1 ? s.length : nl + 1;
+    };
+
+    while (i < s.length) {
+      if (i === lineStart) {
+        const end = lineEnd(i);
+        const line = s.slice(i, end);
+        if (inFence) {
+          const close = line.match(/^ {0,3}(`{3,}|~{3,})\s*$/);
+          if (close && close[1][0] === fenceChar && close[1].length >= fenceLen) {
+            inFence = false;
+          }
+          out += line;
+          i = end;
+          lineStart = i;
+          continue;
+        }
+        const open = line.match(/^ {0,3}(`{3,}|~{3,})/);
+        if (open) {
+          inFence = true;
+          fenceChar = open[1][0];
+          fenceLen = open[1].length;
+          out += line;
+          i = end;
+          lineStart = i;
+          continue;
+        }
+      }
+
+      if (inFence) {
+        out += s[i];
+        i += 1;
+        continue;
+      }
+
+      // 行内代码：整段原样保留，里面的 $ 不当公式
+      if (s[i] === '`') {
+        let n = 0;
+        while (s[i + n] === '`') n += 1;
+        const close = findBacktickClose(s, i + n, n);
+        if (close !== -1) {
+          out += s.slice(i, close + n);
+          i = close + n;
+          continue;
+        }
+        out += s.slice(i, i + n);
+        i += n;
+        continue;
+      }
+
+      if (s[i] === '\\') {
+        const next = s[i + 1];
+        // \( ... \) / \[ ... \]：大模型最常见的写法
+        if (next === '(' || next === '[') {
+          const closeToken = next === '(' ? '\\)' : '\\]';
+          const end = s.indexOf(closeToken, i + 2);
+          if (end !== -1) {
+            segments.push({ tex: s.slice(i + 2, end), display: next === '[' });
+            out += mathToken(segments.length - 1);
+            i = end + 2;
+            continue;
+          }
+        }
+        if (next === '$' || next === '\\') {
+          out += s.slice(i, i + 2);
+          i += 2;
+          continue;
+        }
+        out += s[i];
+        i += 1;
+        continue;
+      }
+
+      // $$ ... $$ 块级
+      if (s[i] === '$' && s[i + 1] === '$') {
+        const end = s.indexOf('$$', i + 2);
+        if (end !== -1) {
+          segments.push({ tex: s.slice(i + 2, end), display: true });
+          out += mathToken(segments.length - 1);
+          i = end + 2;
+          continue;
+        }
+      }
+
+      // $ ... $ 行内（避开 $5.00 这类金额）
+      if (s[i] === '$') {
+        const next = s[i + 1];
+        if (next && !/\s/.test(next)) {
+          const end = findDollarClose(s, i + 1);
+          if (end !== -1) {
+            const tex = s.slice(i + 1, end);
+            if (!/^[\d.,\s]+$/.test(tex)) {
+              segments.push({ tex, display: false });
+              out += mathToken(segments.length - 1);
+              i = end + 1;
+              continue;
+            }
+          }
+        }
+      }
+
+      out += s[i];
+      i += 1;
+    }
+
+    return { text: out, segments };
+  }
+
+  function renderMath(tex, display) {
+    if (katex && typeof katex.renderToString === 'function') {
+      try {
+        return katex.renderToString(String(tex), {
+          displayMode: !!display,
+          output: 'mathml',
+          throwOnError: false,
+          strict: 'ignore',
+          trust: false,
+        });
+      } catch (_) {}
+    }
+    return '<code class="math-tex">' + escapeHtml(tex) + '</code>';
+  }
+
+  function substituteMath(html, segments) {
+    if (!segments.length) return html;
+    // 独占一段的块级公式换成 div，避免塞在 <p> 里导致排版塌陷
+    let out = html.replace(/<p>\s*@@LINGMATH(\d+)@@\s*<\/p>/g, (m, idx) => {
+      const seg = segments[Number(idx)];
+      return seg && seg.display
+        ? '<div class="math-display">' + renderMath(seg.tex, true) + '</div>'
+        : m;
+    });
+    out = out.replace(/@@LINGMATH(\d+)@@/g, (m, idx) => {
+      const seg = segments[Number(idx)];
+      return seg ? renderMath(seg.tex, seg.display) : m;
+    });
+    return out;
   }
 
   function slugify(text) {
@@ -118,18 +314,23 @@
    * @param {{inline?:boolean, sanitize?:boolean}} [opts]
    */
   function renderMarkdown(md, opts = {}) {
-    const source = String(md == null ? '' : md);
+    const source = String(md == null ? '' : md).replace(/^\uFEFF/, '');
     if (!source.trim()) return '';
     configure();
-    if (!marked) return fallbackSanitize(escapeHtml(source).replace(/\n/g, '<br />'));
+    const math = protectMath(source);
+    if (!marked) {
+      const fallback = fallbackSanitize(escapeHtml(math.text).replace(/\n/g, '<br />'));
+      return substituteMath(fallback, math.segments);
+    }
     let html;
     try {
-      html = opts.inline ? marked.parseInline(source) : marked.parse(source);
+      html = opts.inline ? marked.parseInline(math.text) : marked.parse(math.text);
     } catch (err) {
       console.error('[lingmark] markdown render failed', err);
       return `<p>${escapeHtml(source)}</p>`;
     }
-    return opts.sanitize === false ? html : sanitize(html);
+    const safe = opts.sanitize === false ? html : sanitize(html);
+    return substituteMath(safe, math.segments);
   }
 
   function renderInline(text) {
@@ -141,7 +342,9 @@
    * @returns {{level:number,text:string,line:number,slug:string}[]}
    */
   function extractOutline(md) {
-    const lines = String(md == null ? '' : md).split('\n');
+    const lines = String(md == null ? '' : md)
+      .replace(/^\uFEFF/, '')
+      .split('\n');
     const out = [];
     let inFence = false;
     let fenceMark = '';
@@ -190,7 +393,7 @@
 
   /** 统计字数：中文按字、英文按词 */
   function countWords(md) {
-    const s = String(md == null ? '' : md);
+    const s = String(md == null ? '' : md).replace(/^\uFEFF/, '');
     const cjk = (s.match(/[\u4e00-\u9fa5\u3040-\u30ff]/g) || []).length;
     const latin = (s.match(/[A-Za-z0-9_]+/g) || []).length;
     return { chars: s.length, cjk, words: latin, total: cjk + latin };

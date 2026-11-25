@@ -173,6 +173,57 @@
 
   // ────────────────────────── 编辑器组件 ──────────────────────────
 
+  // ────────────────────────── 图标 ──────────────────────────
+  // 统一用 24 视窗、1.7 描边的线条图标，避免各平台 emoji 字形不一致。
+  const ICONS = {
+    logo: '<path d="M12 3.2c3.6 4.2 6.2 7.2 6.2 10.3a6.2 6.2 0 0 1-12.4 0C5.8 10.4 8.4 7.4 12 3.2Z"/>',
+    bold: '<path d="M7 4.5h6.2a3.9 3.9 0 0 1 0 7.8H7zM7 12.3h7a3.9 3.9 0 0 1 0 7.7H7z"/>',
+    italic: '<path d="M18.5 4.5h-7M12.5 19.5h-7M15 4.5 9 19.5"/>',
+    strike: '<path d="M15.6 4.8H9.8a2.9 2.9 0 0 0-1.2 5.5M13.8 13a3.4 3.4 0 0 1 .2 6.2H7.4M4 12h16"/>',
+    code: '<path d="m15.5 17.5 5-5.5-5-5.5M8.5 6.5 3.5 12l5 5.5"/>',
+    quote:
+      '<path d="M9.5 6.5C6.6 7.9 5 10.2 5 13.2v4.3h5.2v-5.2H7.6c0-1.9.8-3.2 2.4-4.1zM19 6.5c-2.9 1.4-4.5 3.7-4.5 6.7v4.3h5.2v-5.2h-2.6c0-1.9.8-3.2 2.4-4.1z"/>',
+    ul: '<path d="M9 6.5h11M9 12h11M9 17.5h11"/><circle cx="4.2" cy="6.5" r="1.1"/><circle cx="4.2" cy="12" r="1.1"/><circle cx="4.2" cy="17.5" r="1.1"/>',
+    ol: '<path d="M9.5 6.5h10.5M9.5 12H20M9.5 17.5H20M4 5.2h1.4v4M3.8 9.2h2.4M4 13.4h1.9a1 1 0 0 1 0 2H4.4a1 1 0 0 0 0 2h1.9"/>',
+    task: '<path d="m4.5 12.5 2.8 2.8L12.5 9"/><path d="M20 12.5v5.2a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h8.2"/>',
+    link: '<path d="M10.2 13.8a4.2 4.2 0 0 0 6 0l2.8-2.8a4.2 4.2 0 0 0-6-6l-1.4 1.4"/><path d="M13.8 10.2a4.2 4.2 0 0 0-6 0L5 13a4.2 4.2 0 0 0 6 6l1.4-1.4"/>',
+    image:
+      '<rect x="3.5" y="4.5" width="17" height="15" rx="2.2"/><circle cx="8.6" cy="9.4" r="1.5"/><path d="m20.5 16-4.6-4.6L6 20.5"/>',
+    table:
+      '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M3.5 9.5h17M3.5 14.5h17M9.5 4.5v15M15 4.5v15"/>',
+    hr: '<path d="M4 12h16"/><path d="M7 7.5h10M7 16.5h10" opacity=".35"/>',
+    search: '<circle cx="11" cy="11" r="6.6"/><path d="m20.5 20.5-4.4-4.4"/>',
+    command:
+      '<path d="M15 6.2v11.6a2.9 2.9 0 1 0 2.9-2.9H6.1a2.9 2.9 0 1 0 2.9 2.9V6.1A2.9 2.9 0 1 0 6.1 9h11.8A2.9 2.9 0 1 0 15 6.2Z"/>',
+    zen: '<path d="M8.5 3.5h-3a2 2 0 0 0-2 2v3M15.5 3.5h3a2 2 0 0 1 2 2v3M8.5 20.5h-3a2 2 0 0 1-2-2v-3M15.5 20.5h3a2 2 0 0 0 2-2v-3"/>',
+    typewriter: '<path d="M4 6.5h16M4 12h16M4 17.5h11"/>',
+    sun: '<circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/>',
+    moon: '<path d="M20.5 13.4A8.2 8.2 0 1 1 10.6 3.5a6.4 6.4 0 0 0 9.9 9.9Z"/>',
+    outline: '<path d="M4 6.5h5M4 12h9M4 17.5h13"/><path d="M4 3.2v17.6" opacity=".4"/>',
+    split: '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><path d="M12 4.5v15"/>',
+    edit: '<path d="M12.5 20.5H21"/><path d="M16.6 3.9a2 2 0 0 1 2.8 2.8L7.6 18.5l-3.8 1 1-3.8Z"/>',
+    preview: '<path d="M2.5 12S6 5.5 12 5.5 21.5 12 21.5 12 18 18.5 12 18.5 2.5 12 2.5 12Z"/><circle cx="12" cy="12" r="2.8"/>',
+    copy: '<rect x="8.5" y="8.5" width="11.5" height="11.5" rx="2"/><path d="M5.5 15.2V6a2 2 0 0 1 2-2h9.2"/>',
+    external: '<path d="M14 3.5h6.5V10M20.5 3.5 12 12"/><path d="M20 14.5v4.5a2 2 0 0 1-2 2H5.5a2 2 0 0 1-2-2V6.5a2 2 0 0 1 2-2H10"/>',
+    close: '<path d="m6 6 12 12M18 6 6 18"/>',
+    folder:
+      '<path d="M3.5 6.8a2 2 0 0 1 2-2h3.9l2 2.4h7.1a2 2 0 0 1 2 2v8.2a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z"/>',
+    plus: '<path d="M12 5.5v13M5.5 12h13"/>',
+  };
+
+  function icon(name, extraClass) {
+    const body = ICONS[name];
+    if (!body) return '';
+    return (
+      '<svg class="mde-svg' +
+      (extraClass ? ' ' + extraClass : '') +
+      '" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      body +
+      '</svg>'
+    );
+  }
+
   function el(tag, attrs = {}, children = []) {
     const node = document.createElement(tag);
     for (const [k, v] of Object.entries(attrs || {})) {
@@ -217,6 +268,8 @@
       value: String(options.value || ''),
       mode: options.mode || 'split', // split | edit | preview
       zen: false,
+      outline: true,
+      themePref: 'auto',
       typewriter: false,
       fileName: options.fileName || '',
       filePath: options.filePath || '',
@@ -250,8 +303,15 @@
       placeholder: options.placeholder || '在这里写 Markdown…',
       value: state.value,
     });
-    const preview = el('div', { class: 'mde-view md-body' });
+    const preview = el('div', { class: 'md-body' });
+    const previewScroll = el('div', { class: 'mde-view' }, [preview]);
     const outlineBox = el('div', { class: 'mde-outline' });
+    const outlineWrap = el('div', { class: 'mde-outline-wrap' }, [
+      el('div', { class: 'mde-outline-head' }, [
+        el('span', { class: 'mde-outline-title', text: '大纲' }),
+      ]),
+      outlineBox,
+    ]);
     const findBox = el('div', { class: 'mde-find hidden' });
     const slashBox = el('div', { class: 'mde-slash hidden' });
     const cmdBox = el('div', { class: 'mde-cmd hidden' });
@@ -259,20 +319,71 @@
     const statusRight = el('span', { class: 'mde-status-item' });
     const fileNameEl = el('span', { class: 'mde-filename' });
     const fileSubEl = el('span', { class: 'mde-sub' });
-    const titleEl = el('div', { class: 'mde-title' }, [fileNameEl, fileSubEl]);
-    const toolbar = el('div', { class: 'mde-toolbar' });
-    const segBox = el('div', { class: 'mde-seg' });
+    const docMeta = el('div', { class: 'mde-doc' }, [fileNameEl, fileSubEl]);
+    const toolbar = el('div', { class: 'mde-tools' });
+    const segBox = el('div', { class: 'mde-seg', role: 'tablist' });
+    const themeBtn = el('button', {
+      class: 'mde-iconbtn',
+      type: 'button',
+      title: '切换主题',
+      'aria-label': '切换主题',
+      onclick: () => cycleTheme(),
+    });
+    const outlineBtn = el('button', {
+      class: 'mde-iconbtn',
+      type: 'button',
+      title: '显示/隐藏大纲',
+      'aria-label': '显示/隐藏大纲',
+      onclick: () => {
+        state.outline = !state.outline;
+        applyMode();
+      },
+    });
+    outlineBtn.innerHTML = icon('outline');
+    const zenBtn = el('button', {
+      class: 'mde-iconbtn',
+      type: 'button',
+      title: '专注模式 (Ctrl+Shift+F)',
+      'aria-label': '专注模式',
+      onclick: () => toggleZen(),
+    });
+    zenBtn.innerHTML = icon('zen');
 
-    const editPane = el('div', { class: 'mde-pane mde-pane-edit' }, [ta]);
-    const viewPane = el('div', { class: 'mde-pane mde-pane-view' }, [preview]);
-    const main = el('div', { class: 'mde-main' }, [
-      el('div', { class: 'mde-outline-wrap' }, [outlineBox]),
-      editPane,
-      viewPane,
+    const openBtn = el('button', {
+      class: 'mde-headbtn',
+      type: 'button',
+      title: '打开文件 (Ctrl+O)',
+      'aria-label': '打开文件',
+      html: icon('folder') + '<span>打开</span>',
+      onclick: () => emit('open'),
+    });
+    const newBtn = el('button', {
+      class: 'mde-headbtn',
+      type: 'button',
+      title: '新建文件 (Ctrl+N)',
+      'aria-label': '新建文件',
+      html: icon('plus') + '<span>新建</span>',
+      onclick: () => emit('new'),
+    });
+
+    const head = el('div', { class: 'mde-head' }, [
+      el('span', { class: 'mde-brand', html: icon('logo') }),
+      docMeta,
+      openBtn,
+      newBtn,
+      el('div', { class: 'mde-head-spacer' }),
+      segBox,
+      outlineBtn,
+      themeBtn,
+      zenBtn,
     ]);
 
+    const editPane = el('div', { class: 'mde-pane mde-pane-edit' }, [ta]);
+    const viewPane = el('div', { class: 'mde-pane mde-pane-view' }, [previewScroll]);
+    const main = el('div', { class: 'mde-main' }, [outlineWrap, editPane, viewPane]);
+
     const root = el('div', { class: 'mde' }, [
-      titleEl,
+      head,
       toolbar,
       main,
       findBox,
@@ -283,14 +394,89 @@
     host.innerHTML = '';
     host.appendChild(root);
 
+    // —— 主题 ——
+    const THEME_KEY = 'lingmark.theme';
+
+    function resolveTheme(pref) {
+      if (pref === 'light' || pref === 'dark') return pref;
+      return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
+        ? 'dark'
+        : 'light';
+    }
+
+    function paintThemeBtn() {
+      const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+      themeBtn.innerHTML = icon(dark ? 'sun' : 'moon');
+      themeBtn.title = dark ? '切换到浅色主题' : '切换到深色主题';
+    }
+
+    /** 原生标题栏按钮的颜色跟随主题 */
+    function syncNativeTheme() {
+      const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+      if (global.lm && global.lm.app && typeof global.lm.app.setTheme === 'function') {
+        global.lm.app.setTheme(dark);
+      }
+    }
+
+    function setThemePref(pref) {
+      state.themePref = pref;
+      try {
+        localStorage.setItem(THEME_KEY, pref);
+      } catch (_) {}
+      document.documentElement.setAttribute('data-theme-pref', pref);
+      document.documentElement.setAttribute('data-theme', resolveTheme(pref));
+      paintThemeBtn();
+      syncNativeTheme();
+    }
+
+    function cycleTheme() {
+      const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+      setThemePref(dark ? 'light' : 'dark');
+    }
+
+    function initTheme() {
+      let pref = 'auto';
+      try {
+        pref =
+          localStorage.getItem(THEME_KEY) ||
+          document.documentElement.getAttribute('data-theme-pref') ||
+          'auto';
+      } catch (_) {}
+      state.themePref = pref;
+      document.documentElement.setAttribute('data-theme', resolveTheme(pref));
+      paintThemeBtn();
+      syncNativeTheme();
+      try {
+        const mq = window.matchMedia('(prefers-color-scheme: dark)');
+        mq.addEventListener('change', () => {
+          if (state.themePref === 'auto') setThemePref('auto');
+        });
+      } catch (_) {}
+    }
+
     // —— 状态同步 ——
     function applyMode() {
       root.dataset.mode = state.mode;
+      root.dataset.outline = state.outline ? 'on' : 'off';
       root.classList.toggle('is-zen', state.zen);
       root.classList.toggle('is-typewriter', state.typewriter);
       editPane.hidden = state.mode === 'preview';
       viewPane.hidden = state.mode === 'edit';
-      outlineBox.parentElement.hidden = state.mode !== 'split' || state.zen;
+      outlineWrap.hidden = state.mode !== 'split' || state.zen || !state.outline;
+      toolbar.hidden = state.mode === 'preview' || state.zen;
+      outlineBtn.classList.toggle('is-active', state.outline);
+      zenBtn.classList.toggle('is-active', state.zen);
+    }
+
+    function setMode(m) {
+      state.mode = m;
+      applyMode();
+      buildSeg();
+    }
+
+    function toggleZen() {
+      state.zen = !state.zen;
+      applyMode();
     }
 
     function setValue(v, opts = {}) {
@@ -324,9 +510,28 @@
     }
 
     // —— 渲染 ——
+    function emptyStateHtml() {
+      return (
+        '<div class="mde-empty">' +
+        '<div class="mde-empty-mark">' +
+        icon('logo') +
+        '</div>' +
+        '<h1>开始写点什么</h1>' +
+        '<p>左边写 Markdown，右边即时预览。文件存在本地，不经过云端。</p>' +
+        '<div class="mde-empty-keys">' +
+        '<span><kbd>Ctrl</kbd><kbd>N</kbd>新建</span>' +
+        '<span><kbd>Ctrl</kbd><kbd>O</kbd>打开</span>' +
+        '<span><kbd>Ctrl</kbd><kbd>S</kbd>保存</span>' +
+        '<span><kbd>Ctrl</kbd><kbd>Shift</kbd><kbd>P</kbd>命令</span>' +
+        '</div></div>'
+      );
+    }
+
     const paintPreview = debounce(() => {
+      const top = previewScroll.scrollTop;
       const html = MD.renderMarkdown(ta.value);
-      preview.innerHTML = html || '<p class="mde-hint">开始写点什么…</p>';
+      preview.innerHTML = html || emptyStateHtml();
+      previewScroll.scrollTop = top;
       wirePreview();
     }, 90);
 
@@ -362,7 +567,12 @@
                 ta.focus();
                 ta.setSelectionRange(pos, pos);
                 const lineHeight = parseFloat(getComputedStyle(ta).lineHeight) || 20;
-                ta.scrollTop = Math.max(0, (line - 3) * lineHeight);
+                ta.scrollTop = Math.max(0, (it.line - 3) * lineHeight);
+                // 预览同步定位到对应标题
+                const heading = document.getElementById(it.slug);
+                if (heading && preview.contains(heading)) {
+                  previewScroll.scrollTop = Math.max(0, heading.offsetTop - 28);
+                }
               },
             },
           )
@@ -386,7 +596,7 @@
       paintStatus();
       fileNameEl.textContent = state.fileName || '未命名.md';
       fileSubEl.textContent = state.filePath ? dirLabel(state.filePath) : '';
-      titleEl.classList.toggle('is-dirty', state.dirty);
+      docMeta.classList.toggle('is-dirty', state.dirty);
     }
 
     function dirLabel(p) {
@@ -395,8 +605,57 @@
       return i >= 0 ? s.slice(0, i) : '';
     }
 
-    // —— 预览里的任务清单可点 ——
+    // —— 预览交互：外链、代码复制、任务清单 ——
     function wirePreview() {
+      // 外链交给系统浏览器，避免把应用窗口导航走
+      preview.querySelectorAll('a[href]').forEach((a) => {
+        if (a.dataset.wired) return;
+        a.dataset.wired = '1';
+        a.addEventListener('click', (e) => {
+          e.preventDefault();
+          const href = a.getAttribute('href') || '';
+          if (/^(https?:|mailto:)/i.test(href) && global.lm && global.lm.shell) {
+            global.lm.shell.openExternal(href);
+          }
+        });
+      });
+
+      // 代码块一键复制
+      preview.querySelectorAll('pre.md-code').forEach((pre) => {
+        if (pre.querySelector('.mde-copy')) return;
+        const btn = el('button', {
+          class: 'mde-copy',
+          type: 'button',
+          title: '复制代码',
+          'aria-label': '复制代码',
+          html: icon('copy'),
+        });
+        btn.addEventListener('click', async (e) => {
+          e.preventDefault();
+          const code = pre.querySelector('code');
+          const text = code ? code.textContent : pre.textContent;
+          try {
+            await navigator.clipboard.writeText(text);
+          } catch (_) {
+            const tmp = document.createElement('textarea');
+            tmp.value = text;
+            document.body.appendChild(tmp);
+            tmp.select();
+            try {
+              document.execCommand('copy');
+            } catch (_) {}
+            tmp.remove();
+          }
+          btn.classList.add('is-done');
+          btn.textContent = '已复制';
+          setTimeout(() => {
+            btn.classList.remove('is-done');
+            btn.innerHTML = icon('copy');
+          }, 1400);
+        });
+        pre.appendChild(btn);
+      });
+
       const boxes = preview.querySelectorAll('input[type="checkbox"]');
       if (!boxes.length) return;
       const tasks = MD.extractTasks(ta.value);
@@ -422,152 +681,112 @@
     }
 
     // —— 工具栏 ——
+    function toolButton(name, title, onclick, extraClass) {
+      return el('button', {
+        class: 'mde-tool' + (extraClass ? ' ' + extraClass : ''),
+        type: 'button',
+        title,
+        'aria-label': title,
+        html: icon(name),
+        onclick,
+      });
+    }
+
+    function headingButton(level) {
+      return el('button', {
+        class: 'mde-tool mde-tool-text',
+        type: 'button',
+        text: 'H' + level,
+        title: `${level} 级标题 (Ctrl+Alt+${level})`,
+        onclick: () => apply(setHeading(ta.value, sel(), level)),
+      });
+    }
+
     function buildToolbar() {
       toolbar.innerHTML = '';
-      const group = (items) => {
-        const g = el('div', { class: 'mde-tb-group' });
-        for (const it of items) {
-          g.appendChild(
-            el('button', {
-              class: 'mde-tb-btn' + (it.active ? ' is-active' : ''),
-              text: it.label,
-              title: it.title || it.label,
-              onclick: it.onclick,
-            })
-          );
-        }
-        return g;
-      };
+      const group = (children) => el('div', { class: 'mde-tool-group' }, children);
 
+      toolbar.appendChild(group([headingButton(1), headingButton(2), headingButton(3)]));
       toolbar.appendChild(
         group([
-          { label: 'H1', title: '一级标题 (Ctrl+Alt+1)', onclick: () => apply(setHeading(ta.value, sel(), 1)) },
-          { label: 'H2', title: '二级标题 (Ctrl+Alt+2)', onclick: () => apply(setHeading(ta.value, sel(), 2)) },
-          { label: 'H3', title: '三级标题 (Ctrl+Alt+3)', onclick: () => apply(setHeading(ta.value, sel(), 3)) },
+          toolButton('bold', '加粗 (Ctrl+B)', () =>
+            apply(toggleWrap(ta.value, sel(), '**', '**', '加粗'))
+          ),
+          toolButton('italic', '斜体 (Ctrl+I)', () =>
+            apply(toggleWrap(ta.value, sel(), '*', '*', '斜体'))
+          ),
+          toolButton('strike', '删除线 (Ctrl+Shift+X)', () =>
+            apply(toggleWrap(ta.value, sel(), '~~', '~~', '删除'))
+          ),
+          toolButton('code', '行内代码 (Ctrl+`)', () =>
+            apply(toggleWrap(ta.value, sel(), '`', '`', 'code'))
+          ),
         ])
       );
       toolbar.appendChild(
         group([
-          {
-            label: 'B',
-            title: '加粗 (Ctrl+B)',
-            onclick: () => apply(toggleWrap(ta.value, sel(), '**', '**', '加粗')),
-          },
-          {
-            label: 'I',
-            title: '斜体 (Ctrl+I)',
-            onclick: () => apply(toggleWrap(ta.value, sel(), '*', '*', '斜体')),
-          },
-          {
-            label: 'S',
-            title: '删除线 (Ctrl+Shift+X)',
-            onclick: () => apply(toggleWrap(ta.value, sel(), '~~', '~~', '删除')),
-          },
-          {
-            label: '<>',
-            title: '行内代码 (Ctrl+`)',
-            onclick: () => apply(toggleWrap(ta.value, sel(), '`', '`', 'code')),
-          },
+          toolButton('ul', '无序列表 (Ctrl+Shift+8)', () =>
+            apply(toggleLinePrefix(ta.value, sel(), '- '))
+          ),
+          toolButton('ol', '有序列表 (Ctrl+Shift+7)', () =>
+            apply(toggleLinePrefix(ta.value, sel(), '1. '))
+          ),
+          toolButton('task', '任务清单 (Ctrl+Shift+9)', () =>
+            apply(toggleTask(ta.value, sel()))
+          ),
+          toolButton('quote', '引用', () =>
+            apply(toggleLinePrefix(ta.value, sel(), '> '))
+          ),
         ])
       );
       toolbar.appendChild(
         group([
-          {
-            label: '•',
-            title: '无序列表',
-            onclick: () => apply(toggleLinePrefix(ta.value, sel(), '- ')),
-          },
-          {
-            label: '1.',
-            title: '有序列表',
-            onclick: () => apply(toggleLinePrefix(ta.value, sel(), '1. ')),
-          },
-          {
-            label: '☑',
-            title: '任务清单',
-            onclick: () => apply(toggleTask(ta.value, sel())),
-          },
-          {
-            label: '❝',
-            title: '引用',
-            onclick: () => apply(toggleLinePrefix(ta.value, sel(), '> ')),
-          },
-        ])
-      );
-      toolbar.appendChild(
-        group([
-          {
-            label: '🔗',
-            title: '链接 (Ctrl+K)',
-            onclick: () => apply(toggleWrap(ta.value, sel(), '[', '](https://)', '链接文字')),
-          },
-          {
-            label: '🖼',
-            title: '图片',
-            onclick: () => apply(toggleWrap(ta.value, sel(), '![', '](image.png)', 'alt')),
-          },
-          { label: '▦', title: '表格', onclick: () => apply(insertTable(ta.value, sel())) },
-          { label: '—', title: '分隔线', onclick: () => apply(insertHr(ta.value, sel())) },
+          toolButton('link', '链接 (Ctrl+K)', () =>
+            apply(toggleWrap(ta.value, sel(), '[', '](https://)', '链接文字'))
+          ),
+          toolButton('image', '图片', () =>
+            apply(toggleWrap(ta.value, sel(), '![', '](image.png)', 'alt'))
+          ),
+          toolButton('table', '表格', () => apply(insertTable(ta.value, sel()))),
+          toolButton('hr', '分隔线', () => apply(insertHr(ta.value, sel()))),
         ])
       );
 
-      const spacer = el('div', { class: 'mde-tb-spacer' });
-      toolbar.appendChild(spacer);
-
+      toolbar.appendChild(el('div', { class: 'mde-tool-spacer' }));
       toolbar.appendChild(
-        el('button', {
-          class: 'mde-tb-btn',
-          text: '⌘',
-          title: '命令面板 (Ctrl+Shift+P)',
-          onclick: () => openCmd(''),
-        })
-      );
-      toolbar.appendChild(
-        el('button', {
-          class: 'mde-tb-btn' + (state.typewriter ? ' is-active' : ''),
-          text: '⤓',
-          title: '打字机模式：当前行始终居中',
-          onclick: () => {
-            state.typewriter = !state.typewriter;
-            applyMode();
-            buildToolbar();
-          },
-        })
-      );
-      toolbar.appendChild(
-        el('button', {
-          class: 'mde-tb-btn' + (state.zen ? ' is-active' : ''),
-          text: '◱',
-          title: '专注模式 (Ctrl+Shift+F)',
-          onclick: () => {
-            state.zen = !state.zen;
-            applyMode();
-            buildToolbar();
-          },
-        })
+        group([
+          toolButton(
+            'typewriter',
+            '打字机模式：当前行始终居中',
+            () => {
+              state.typewriter = !state.typewriter;
+              applyMode();
+              buildToolbar();
+            },
+            state.typewriter ? 'is-active' : ''
+          ),
+          toolButton('search', '查找与替换 (Ctrl+F)', () => toggleFind()),
+          toolButton('command', '命令面板 (Ctrl+Shift+P)', () => openCmd('')),
+        ])
       );
     }
 
-    /** 视图切换：放在文档头的右侧，做成分段控件 */
+    /** 视图切换：放在文档头右侧的分段控件（图标 + 文字） */
     function buildSeg() {
       segBox.innerHTML = '';
       const modes = [
-        ['split', '并排'],
-        ['edit', '编辑'],
-        ['preview', '预览'],
+        ['split', 'split', '分栏', '1'],
+        ['edit', 'edit', '编辑', '2'],
+        ['preview', 'preview', '预览', '3'],
       ];
-      for (const [m, label] of modes) {
+      for (const [m, ico, label, key] of modes) {
         segBox.appendChild(
           el('button', {
-            class: 'mde-tb-btn' + (state.mode === m ? ' is-active' : ''),
-            text: label,
-            title: `视图：${label}`,
-            onclick: () => {
-              state.mode = m;
-              applyMode();
-              buildSeg();
-              buildToolbar();
-            },
+            class: 'mde-segbtn' + (state.mode === m ? ' is-active' : ''),
+            type: 'button',
+            title: `视图：${label} (Ctrl+${key})`,
+            html: icon(ico) + '<span>' + label + '</span>',
+            onclick: () => setMode(m),
           })
         );
       }
@@ -820,9 +1039,7 @@
         }
         if (e.shiftKey && key === 'f') {
           e.preventDefault();
-          state.zen = !state.zen;
-          applyMode();
-          buildToolbar();
+          toggleZen();
           return;
         }
         if (e.shiftKey && key === 'p') {
@@ -833,11 +1050,7 @@
         if (!e.shiftKey && key >= '1' && key <= '3') {
           // 与原生菜单的 Ctrl+1/2/3（并排/编辑/预览）保持一致
           e.preventDefault();
-          const mode = ['split', 'edit', 'preview'][Number(key) - 1];
-          state.mode = mode;
-          applyMode();
-          buildSeg();
-          buildToolbar();
+          setMode(['split', 'edit', 'preview'][Number(key) - 1]);
           return;
         }
         if (e.altKey && key >= '0' && key <= '6') {
@@ -913,9 +1126,6 @@
 
     ta.addEventListener('click', paintStatus);
     ta.addEventListener('keyup', paintStatus);
-    ta.addEventListener('scroll', () => {
-      preview.scrollTop = ta.scrollTop;
-    });
 
     // —— 图片粘贴 / 拖拽 ——
     async function insertImageFile(file) {
@@ -974,7 +1184,17 @@
           },
         },
         { id: 'find', label: '查找与替换', hint: 'Ctrl+F', run: () => toggleFind(true) },
+        { id: 'theme', label: '切换浅色 / 深色主题', run: () => cycleTheme() },
+        {
+          id: 'outline',
+          label: '显示 / 隐藏大纲',
+          run: () => {
+            state.outline = !state.outline;
+            applyMode();
+          },
+        },
         { id: 'save', label: '保存文件', hint: 'Ctrl+S', run: () => emit('save') },
+        { id: 'default-md', label: '把 LingMark 设为 .md 默认打开方式', run: () => emit('set-default') },
         { id: 'export', label: '导出为 HTML', run: () => emit('export') },
       ];
       for (const c of SLASH_COMMANDS) {
@@ -1082,8 +1302,7 @@
     }
 
     // —— 初始化 ——
-    titleEl.appendChild(el('div', { class: 'mde-tb-spacer' }));
-    titleEl.appendChild(segBox);
+    initTheme();
     buildSeg();
     buildToolbar();
     buildFind();
@@ -1095,16 +1314,11 @@
       getValue,
       setValue,
       focus: () => ta.focus(),
-      setMode(m) {
-        state.mode = m;
+      setMode,
+      toggleZen,
+      toggleOutline() {
+        state.outline = !state.outline;
         applyMode();
-        buildSeg();
-        buildToolbar();
-      },
-      toggleZen() {
-        state.zen = !state.zen;
-        applyMode();
-        buildToolbar();
       },
       openCommandPalette: (q) => openCmd(q || ''),
       toggleFind,

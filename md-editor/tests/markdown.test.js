@@ -20,6 +20,9 @@ function loadMarkdown() {
   const markedCode = fs.readFileSync(path.join(root, 'src/renderer/lib/vendor/marked.min.js'), 'utf8');
   vm.runInContext(markedCode, sandbox);
   sandbox.window.marked = sandbox.marked;
+  const katexCode = fs.readFileSync(path.join(root, 'src/renderer/lib/vendor/katex.min.js'), 'utf8');
+  vm.runInContext(katexCode, sandbox);
+  sandbox.window.katex = sandbox.katex;
   const code = fs.readFileSync(path.join(root, 'src/renderer/lib/markdown.js'), 'utf8');
   vm.runInContext(code.replace("typeof window !== 'undefined' ? window : globalThis", 'window'), sandbox);
   return sandbox.window.LingMarkdown;
@@ -141,4 +144,37 @@ test('空输入返回空串而不是报错', () => {
   assert.strictEqual(MD.renderMarkdown(''), '');
   assert.strictEqual(MD.renderMarkdown(null), '');
   assert.strictEqual(MD.renderMarkdown(undefined), '');
+});
+
+test('文件带 UTF-8 BOM 时仍能识别标题与正文', () => {
+  const src = '\uFEFF# 标题\n\n正文';
+  const html = MD.renderMarkdown(src);
+  assert.match(html, /<h1[^>]*>标题/);
+  assert.strictEqual(MD.extractOutline(src).length, 1);
+  assert.strictEqual(MD.countWords(src).cjk, 4);
+});
+
+test('支持大模型常用的 \\(...\\) 行内公式', () => {
+  const html = MD.renderMarkdown('质能方程 \\(E=mc^2\\) 很简单');
+  assert.match(html, /<math/);
+  assert.ok(!html.includes('\\(E=mc^2\\)'), '占位符应已被渲染');
+});
+
+test('支持 \\[...\\] 与 $$...$$ 块级公式', () => {
+  const a = MD.renderMarkdown('\\[\\frac{a}{b}\\]');
+  const b = MD.renderMarkdown('$$\n\\int_0^1 x dx\n$$');
+  assert.match(a, /<math[^>]*display="block"/);
+  assert.match(b, /<math[^>]*display="block"/);
+  assert.match(a, /<div class="math-display">/);
+});
+
+test('行内代码与代码块里的 $ 不当公式', () => {
+  const html = MD.renderMarkdown('`$x$`\n\n```\n$y$\n```');
+  assert.ok(!html.includes('<math'));
+  assert.match(html, /<code>\$x\$<\/code>/);
+});
+
+test('金额不会被误判成公式', () => {
+  const html = MD.renderMarkdown('价格 $5.00 和 $12，还有 $ 符号');
+  assert.ok(!html.includes('<math'));
 });

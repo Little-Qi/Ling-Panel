@@ -86,3 +86,19 @@ test('addItem rejects empty content', () => {
   const r = aiLog.addItem(root, { role: 'q', content: '   ' });
   assert.strictEqual(r.ok, false);
 });
+
+test('第 201 个会话、第 5001 条消息和旧版孤立消息均可重新打开', () => {
+  const root = tmpRoot();
+  const sessions = Array.from({ length: 200 }, (_, i) => ({ id: 's' + i, title: 'chat' + i }));
+  const items = Array.from({ length: 5000 }, (_, i) => ({ id: 'm' + i, sessionId: 's0', content: 'msg' }));
+  aiLog.saveAiLog(root, { sessions, items });
+  const s = aiLog.createSession(root, 'new chat');
+  aiLog.addItem(root, { sessionId: s.id, content: 'new message' });
+  const db = aiLog.loadAiLog(root);
+  assert.strictEqual(db.sessions.length, 201);
+  assert.strictEqual(db.sessions[0].id, s.id);
+  assert.strictEqual(db.items.length, 5001);
+  aiLog.saveAiLog(root, { sessions, items: db.items });
+  assert.ok(aiLog.listSessions(root).some((session) => session.id === s.id));
+  assert.strictEqual(aiLog.listItems(root, s.id)[0].content, 'new message');
+});

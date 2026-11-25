@@ -7,6 +7,7 @@
   let editor = null;
   let currentPath = '';
   let currentName = '';
+  let documentVersion = 0;
 
   function fileBaseName(p) {
     const s = String(p || '');
@@ -55,6 +56,7 @@
       });
       return;
     }
+    documentVersion++;
     if (editor) {
       editor.setValue(res.content, { silent: true });
       editor.markClean();
@@ -66,7 +68,10 @@
   async function saveFile() {
     if (!editor) return false;
     if (!currentPath) return saveFileAs();
-    const res = await window.lm.file.write(currentPath, editor.getValue());
+    const version = documentVersion;
+    const file = currentPath;
+    const content = editor.getValue();
+    const res = await window.lm.file.write(file, content);
     if (!res || !res.ok) {
       await window.lm.app.confirm({
         type: 'error',
@@ -77,6 +82,7 @@
       });
       return false;
     }
+    if (version !== documentVersion || file !== currentPath || content !== editor.getValue()) return false;
     editor.markClean();
     applyFileInfo({ path: currentPath, name: currentName, baseDir: fileDir(currentPath) });
     return true;
@@ -84,9 +90,11 @@
 
   async function saveFileAs() {
     if (!editor) return false;
+    const version = documentVersion;
     const res = await window.lm.file.saveDialog(currentName || '未命名.md');
-    if (!res || !res.ok) return false;
-    const w = await window.lm.file.write(res.path, editor.getValue());
+    if (!res?.ok || version !== documentVersion) return false;
+    const content = editor.getValue();
+    const w = await window.lm.file.write(res.path, content);
     if (!w || !w.ok) {
       await window.lm.app.confirm({
         type: 'error',
@@ -97,12 +105,14 @@
       });
       return false;
     }
+    if (version !== documentVersion) return false;
     currentPath = res.path;
     currentName = fileBaseName(res.path);
-    editor.markClean();
+    const clean = content === editor.getValue();
+    if (clean) editor.markClean();
     applyFileInfo({ path: currentPath, name: currentName, baseDir: fileDir(currentPath) });
     await window.lm.recent.add(currentPath);
-    return true;
+    return clean;
   }
 
   async function newFile() {
@@ -116,6 +126,7 @@
       });
       if (!res || !res.confirmed) return;
     }
+    documentVersion++;
     editor.setValue('', { silent: true });
     editor.markClean();
     currentPath = '';
@@ -152,6 +163,17 @@
     });
   }
 
+  async function setDefaultMd() {
+    const r = await window.lm.app.setDefaultMd();
+    await window.lm.app.confirm({
+      title: r && r.ok ? '已设为默认打开方式' : '设置失败',
+      message:
+        r && r.ok ? '以后双击 .md / .markdown 会直接用灵墨打开' : '无法写入文件关联',
+      detail: r && r.ok ? r.exe : (r && r.error) || '',
+      buttons: ['好'],
+    });
+  }
+
   function bindEvents() {
     const on = (ch, fn) => {
       if (window.lm && window.lm.events && window.lm.events.on) window.lm.events.on(ch, fn);
@@ -170,23 +192,21 @@
     on('editor:help', showHelp);
 
     // 主进程在关闭前询问：是否放弃未保存的修改
-    on('app:will-close', async () => {
-      if (!editor || !editor.isDirty()) {
-        await window.lm.app.confirmClose();
-        return;
-      }
-      const res = await window.lm.app.confirm({
-        title: '有未保存的修改',
-        message: '是否保存当前文档？',
-        detail: '不保存将丢弃这些修改。',
-        buttons: ['保存', '不保存', '取消'],
-      });
-      if (!res) return;
-      if (res.response === 0) {
-        const ok = await saveFile();
-        if (ok) await window.lm.app.confirmClose();
-      } else if (res.response === 1) {
-        await window.lm.app.confirmClose();
+    on('app:will-close', async (request) => {
+      if (!(await window.lm.app.closeReply(request, 'responding'))) return;
+      let allow = false;
+      try {
+        if (!editor || !editor.isDirty()) {
+          allow = true;
+        } else {
+          const res = await window.lm.app.confirm({
+            title: '有未保存的修改', message: '是否保存当前文档？',
+            detail: '不保存将丢弃这些修改。', buttons: ['保存', '不保存', '取消'], cancelId: 2,
+          });
+          allow = res?.response === 1 || (res?.response === 0 && await saveFile());
+        }
+      } finally {
+        await window.lm.app.closeReply(request, allow ? 'close' : 'keep');
       }
     });
 
@@ -197,6 +217,24 @@
         if (e.shiftKey) saveFileAs();
         else saveFile();
       }
+    });
+  }
+
+  function bindDrop() {
+    // 拖入 .md 直接打开；拖图片仍交给编辑器插入
+    window.addEventListener('dragover', (e) => {
+      e.preventDefault();
+    });
+    window.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      const files = Array.from((e.dataTransfer && e.dataTransfer.files) || []);
+      const md = files.find((f) => /\.(md|markdown|mdown|mkd|txt)$/i.test(f.name || ''));
+      if (!md) return;
+      const p =
+        window.lm && window.lm.file && window.lm.file.pathForFile
+          ? window.lm.file.pathForFile(md)
+          : '';
+      if (p) await openFile(p);
     });
   }
 
@@ -212,6 +250,7 @@
       ['Ctrl+Shift+P', '命令面板'],
       ['Ctrl+Shift+F', '专注模式'],
       ['Ctrl+F', '查找与替换'],
+      ['Ctrl+N / Ctrl+O', '新建 / 打开（也可以把 .md 拖进窗口）'],
       ['Ctrl+S / Ctrl+Shift+S', '保存 / 另存为'],
       ['输入 “/”', '呼出命令菜单'],
       ['Tab / Shift+Tab', '缩进 / 反缩进'],
@@ -236,9 +275,13 @@
       onCommand: (name) => {
         if (name === 'save') saveFile();
         else if (name === 'export') exportHtml();
+        else if (name === 'open') openDialog();
+        else if (name === 'new') newFile();
+        else if (name === 'set-default') setDefaultMd();
       },
     });
     bindEvents();
+    bindDrop();
 
     // 命令行 / 文件关联传入的文件，由主进程在 ready-to-show 后推送
     const cur = await window.lm.file.current();

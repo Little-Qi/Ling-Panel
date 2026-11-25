@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const { randomUUID } = require('crypto');
 const { app } = require('electron');
 
 const DEFAULTS = {
@@ -149,11 +150,8 @@ function deepMerge(base, patch) {
   return out;
 }
 
-/** 防止列表类数据无限增长，拖垮内存与 workspace.json */
+/** 仅对有保留期限的收件箱/历史列表截断。 */
 const CAPS = {
-  todos: 500,
-  notes: 500,
-  links: 500,
   clips: 500,
   clipInbox: 300,
   shots: 300,
@@ -165,34 +163,97 @@ function capList(key, list) {
   return list.length > max ? list.slice(0, max) : list;
 }
 
+function readWorkspace(file) {
+  const raw = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('工作区格式错误');
+  for (const [key, value] of Object.entries(DEFAULTS)) {
+    if (!(key in raw)) continue; // 早期版本没有全部分区
+    if (!raw[key] || typeof raw[key] !== 'object' || Array.isArray(raw[key]) !== Array.isArray(value)) {
+      throw new Error(`工作区分区 ${key} 格式错误`);
+    }
+  }
+  return deepMerge(structuredClone(DEFAULTS), raw);
+}
+
+function snapshot(file, dest) {
+  const tmp = dest + '.' + randomUUID() + '.tmp';
+  try {
+    try {
+      fs.linkSync(file, tmp);
+    } catch {
+      fs.copyFileSync(file, tmp);
+    }
+    fs.renameSync(tmp, dest);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+}
+
 class Store {
   constructor() {
     this.cache = null;
+    this.newWorkspace = false;
+    this.activityDirty = false;
+    this.flushTimer = null;
   }
 
   load() {
     if (this.cache) return this.cache;
     const file = storePath();
-    let raw = {};
     try {
-      if (fs.existsSync(file)) {
-        raw = JSON.parse(fs.readFileSync(file, 'utf8'));
-      }
+      this.cache = readWorkspace(file);
+      this.newWorkspace = false;
     } catch (err) {
-      console.error('[store] failed to read workspace, using defaults', err);
+      if (err.code !== 'ENOENT' || fs.existsSync(file + '.bak')) throw err;
+      this.newWorkspace = true;
+      this.cache = structuredClone(DEFAULTS);
     }
-    this.cache = deepMerge(DEFAULTS, raw);
     return this.cache;
   }
 
-  save(partial) {
-    const next = deepMerge(this.load(), partial || {});
-    this.cache = next;
+  commit(next, backup = 'rolling') {
     const file = storePath();
     const tmp = `${file}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8');
-    fs.renameSync(tmp, file);
+    try {
+      fs.writeFileSync(tmp, JSON.stringify(next, null, 2), 'utf8');
+      if (backup && fs.existsSync(file)) {
+        snapshot(file, backup === 'rolling' ? file + '.bak' : backup);
+      }
+      fs.renameSync(tmp, file);
+    } finally {
+      fs.rmSync(tmp, { force: true });
+    }
+    this.cache = next;
+    this.newWorkspace = false;
+    this.activityDirty = false;
+    clearTimeout(this.flushTimer);
+    this.flushTimer = null;
     return next;
+  }
+
+  save(partial = {}) {
+    const next = { ...this.load() };
+    for (const [key, value] of Object.entries(partial)) {
+      // 跨天时要用整份新统计替换旧日期的软件和小时明细。
+      next[key] = key === 'activity' ? value : deepMerge(next[key], value);
+    }
+    return this.commit(next);
+  }
+
+  flush() {
+    if (this.activityDirty) this.commit(this.cache);
+  }
+
+  importFile(source) {
+    return this.replace(readWorkspace(source));
+  }
+
+  replace(next) {
+    this.flush();
+    const file = storePath();
+    const backup = fs.existsSync(file) ? file + '.bak-' + randomUUID() : '';
+    this.commit(next, backup);
+    return backup;
   }
 
   getSection(key) {
@@ -200,14 +261,23 @@ class Store {
   }
 
   setSection(key, value) {
-    const capped = capList(key, value);
-    return this.save({ [key]: capped });
+    if (key === 'activity') {
+      this.cache = { ...this.load(), activity: value };
+      this.activityDirty = true;
+      if (!this.flushTimer) {
+        this.flushTimer = setTimeout(() => {
+          this.flushTimer = null;
+          try { this.flush(); } catch (err) { console.error('[store] activity flush failed', err); }
+        }, 60000);
+        this.flushTimer.unref?.();
+      }
+      return this.cache;
+    }
+    return this.save({ [key]: capList(key, value) });
   }
 
   reset() {
-    this.cache = JSON.parse(JSON.stringify(DEFAULTS));
-    this.save({});
-    return this.cache;
+    return this.commit(structuredClone(DEFAULTS));
   }
 
   ensureSeed() {
@@ -220,13 +290,15 @@ class Store {
       expandedWidth: Math.min(Math.max(Number(settings.expandedWidth) || 760, 520), 1400),
       expandedHeight: Math.min(Math.max(Number(settings.expandedHeight) || 560, 360), 1000),
     };
-    if (settings.firstRunDone) {
+    if (!this.newWorkspace) {
       if (
+        !settings.firstRunDone ||
         patched.compactWidth !== settings.compactWidth ||
-        patched.compactHeight !== settings.compactHeight
+        patched.compactHeight !== settings.compactHeight ||
+        patched.expandedWidth !== settings.expandedWidth ||
+        patched.expandedHeight !== settings.expandedHeight
       ) {
-        this.cache = { ...data, settings: patched };
-        return this.save(this.cache);
+        return this.save({ settings: { ...patched, firstRunDone: true } });
       }
       return data;
     }
@@ -237,8 +309,7 @@ class Store {
       links: Array.isArray(data.links) && data.links.length ? data.links : JSON.parse(JSON.stringify(SEED.links)),
       settings: { ...patched, firstRunDone: true },
     };
-    this.cache = next;
-    return this.save(next);
+    return this.commit(next);
   }
 }
 

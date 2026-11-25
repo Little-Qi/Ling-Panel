@@ -3,6 +3,22 @@ const assert = require('node:assert');
 
 const activity = require('../src/main/activity-tracker');
 
+test('连续空闲不探测进程、不写盘，跨天只归档一次', async () => {
+  let stats = activity.emptyDay(), writes = 0, probes = 0;
+  const tracker = new activity.ActivityTracker({
+    store: { getSection: () => stats, setSection: (_key, data) => { writes++; stats = data; } },
+    getIdleMs: () => 120000,
+    probeApp: async () => { probes++; return 'Code'; },
+  });
+  for (let i = 0; i < 6; i++) await tracker.tick();
+  assert.deepStrictEqual([writes, probes], [0, 0]);
+  stats.date = '2000-01-01';
+  await tracker.tick();
+  await tracker.tick();
+  assert.deepStrictEqual([writes, probes], [1, 0]);
+  assert.strictEqual(stats.history[0].date, '2000-01-01');
+});
+
 test('insightsPayload includes hours and day history', () => {
   let stats = activity.emptyDay('2026-09-20');
   stats = activity.applySample(

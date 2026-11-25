@@ -2,7 +2,7 @@
   const { el } = LingUtil;
 
   async function renderLinks(root) {
-    const links = await window.ling.link.list();
+    const pages = Object.create(null);
     root.innerHTML = '';
     root.className = 'view ime-safe';
 
@@ -34,65 +34,69 @@
       }),
     ]);
 
-    const groups = {};
-    for (const l of links) {
-      const g = l.group || '默认';
-      if (!groups[g]) groups[g] = [];
-      groups[g].push(l);
-    }
-
     const wrap = el('div', { class: 'col', style: 'gap:12px' });
-    if (!links.length) {
-      wrap.appendChild(el('div', { class: 'empty', text: '还没有链接。保存公开网址，后台会补全标题。' }));
-    }
-
-    for (const [group, items] of Object.entries(groups)) {
-      const card = el('div', { class: 'card' }, [
-        el('h3', {}, [
-          el('span', { text: group }),
-          el('span', { class: 'muted', text: String(items.length) }),
-        ]),
-      ]);
-      const list = el('div', { class: 'list' });
-      for (const l of items) {
-        list.appendChild(
-          el('div', { class: 'item' }, [
-            el('div', { class: 'col', style: 'flex:1;min-width:0' }, [
-              el('div', { class: 'item-title', text: l.title || l.url }),
-              el('div', { class: 'item-sub', text: l.url }),
-            ]),
-            el('button', {
-              class: 'btn sm',
-              text: '打开',
-              onclick: () => window.open(l.url, '_blank'),
-            }),
-            el('button', {
-              class: 'btn sm',
-              text: '复制',
-              onclick: async () => {
-                try {
-                  await navigator.clipboard.writeText(l.url);
-                  window.ling.app.notify({ title: '已复制链接', message: l.url });
-                } catch {
-                  window.ling.app.notify({ title: '复制失败', message: l.url });
-                }
-              },
-            }),
-            el('button', {
-              class: 'btn sm danger',
-              text: '删',
-              onclick: async () => {
-                await window.ling.link.remove(l.id);
-                await App.refreshCurrent();
-              },
-            }),
-          ])
-        );
+    let request = 0;
+    async function paintGroups() {
+      const version = ++request;
+      const groups = await window.ling.link.groups(pages);
+      if (request !== version) return;
+      wrap.innerHTML = '';
+      if (!groups.length) {
+        wrap.appendChild(el('div', { class: 'empty', text: '还没有链接。保存公开网址，后台会补全标题。' }));
       }
-      card.appendChild(list);
-      wrap.appendChild(card);
-    }
 
+      for (const { name: group, items, total, page, pageCount } of groups) {
+        const card = el('div', { class: 'card' }, [
+          el('h3', {}, [
+            el('span', { text: group }),
+            el('span', { class: 'muted', text: String(total) }),
+          ]),
+        ]);
+        const list = el('div', { class: 'list' });
+        for (const l of items) {
+          list.appendChild(
+            el('div', { class: 'item' }, [
+              el('div', { class: 'col', style: 'flex:1;min-width:0' }, [
+                el('div', { class: 'item-title', text: l.title || l.url }),
+                el('div', { class: 'item-sub', text: l.url }),
+              ]),
+              el('button', {
+                class: 'btn sm',
+                text: '打开',
+                onclick: () => window.open(l.url, '_blank'),
+              }),
+              el('button', {
+                class: 'btn sm',
+                text: '复制',
+                onclick: async () => {
+                  try {
+                    await navigator.clipboard.writeText(l.url);
+                    window.ling.app.notify({ title: '已复制链接', message: l.url });
+                  } catch {
+                    window.ling.app.notify({ title: '复制失败', message: l.url });
+                  }
+                },
+              }),
+              el('button', {
+                class: 'btn sm danger',
+                text: '删',
+                onclick: async () => {
+                  await window.ling.link.remove(l.id);
+                  await App.refreshCurrent();
+                },
+              }),
+            ])
+          );
+        }
+        card.appendChild(list);
+        if (pageCount > 1) card.appendChild(LingUtil.pager(page, pageCount, (p) => {
+          pages[group] = p;
+          return paintGroups();
+        }));
+        wrap.appendChild(card);
+      }
+    }
+    await paintGroups();
     root.append(toolbar, wrap);
   }
 

@@ -5,6 +5,84 @@ const fs = require('fs');
 const os = require('os');
 const paper = require('../src/main/paper-lib');
 
+test('一次批处理只读写一次指纹索引，归档统计只提交一次', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paper-batch-'));
+  const dl = fs.mkdtempSync(path.join(os.tmpdir(), 'paper-files-'));
+  for (let i = 0; i < 100; i++) fs.writeFileSync(path.join(dl, 'paper-' + i + '.pdf'), '%PDF-' + i);
+  const reads = t.mock.method(fs, 'readFileSync');
+  const writes = t.mock.method(fs, 'writeFileSync');
+  const count = (spy, name) => spy.mock.calls.filter(({ arguments: [file] }) => path.basename(file) === name).length;
+  const scan = paper.scanDownloads(root, dl);
+  assert.strictEqual(scan.items.length, 100);
+  assert.strictEqual(count(reads, 'file_hashes.json'), 1);
+  assert.strictEqual(count(writes, 'file_hashes.json.tmp'), 1);
+  reads.mock.resetCalls();
+  writes.mock.resetCalls();
+  paper.scanDownloads(root, dl);
+  assert.strictEqual(count(reads, 'file_hashes.json'), 1);
+  assert.strictEqual(count(writes, 'file_hashes.json.tmp'), 0);
+  reads.mock.resetCalls();
+  writes.mock.resetCalls();
+  const { results, summary } = paper.archivePapers(root, [...scan.items.slice(0, 20), scan.items[0]]);
+  assert.strictEqual(summary.total, 20);
+  assert.strictEqual(results.filter((r) => r.ok).length, 20);
+  assert.ok(results.at(-1).duplicate);
+  assert.strictEqual(count(reads, 'file_hashes.json'), 1);
+  assert.strictEqual(count(writes, 'file_hashes.json.tmp'), 1);
+  assert.strictEqual(count(writes, 'summary.json.tmp'), 1);
+});
+
+test('移动归档遇到清单写入失败时保留源文件，重试只生成一份 PDF 和清单记录', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paper-retry-'));
+  const sourcePath = path.join(root, 'download.pdf');
+  fs.writeFileSync(sourcePath, 'PDF data');
+  const original = fs.appendFileSync;
+  const fail = t.mock.method(fs, 'appendFileSync', (file, ...rest) => {
+    if (path.basename(file) === 'rename_map.csv') throw Error('磁盘已满');
+    return original(file, ...rest);
+  });
+  const params = { sourcePath, title: 'Retry', mode: 'move' };
+  const failure = paper.archivePaper(root, params);
+  assert.strictEqual(failure.ok, false);
+  assert.strictEqual(fs.readFileSync(sourcePath, 'utf8'), 'PDF data');
+  assert.strictEqual(paper.listLibrary(root).length, 0);
+  fail.mock.restore();
+  const saved = paper.archivePaper(root, params);
+  assert.strictEqual(saved.ok, true);
+  assert.strictEqual(fs.existsSync(sourcePath), false);
+  assert.strictEqual(fs.readFileSync(saved.destPath, 'utf8'), 'PDF data');
+  for (const name of ['rename_map.csv', 'paper_manifest.csv']) {
+    const csv = fs.readFileSync(path.join(root, '_manifest', name), 'utf8');
+    assert.strictEqual(csv.trim().split('\n').length, 2);
+  }
+});
+
+test('忽略一组 PDF 只提交一次，并按路径和内容合并重复条目', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paper-ignore-'));
+  paper.addIgnore(root, { sourcePath: 'old.pdf', fp: 'a' });
+  const writes = t.mock.method(fs, 'writeFileSync');
+  const ignored = paper.addIgnores(root, [
+    { sourcePath: 'new.pdf', fingerprint: 'a' }, { sourcePath: 'new.pdf', fp: 'b' }, { sourcePath: 'other.pdf', fp: 'c' },
+  ]);
+  assert.strictEqual(writes.mock.callCount(), 1);
+  assert.deepStrictEqual(ignored.map((x) => x.fp), ['b', 'c']);
+  assert.deepStrictEqual(paper.listIgnored(root), ignored);
+});
+
+test('后台线程按顺序处理归档和扫描，后续任务看到最终结果', async () => {
+  const jobs = require('../src/main/paper-jobs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'paper-worker-'));
+  const dl = fs.mkdtempSync(path.join(os.tmpdir(), 'paper-dl-'));
+  const sourcePath = path.join(dl, 'sample.pdf');
+  fs.writeFileSync(sourcePath, 'sample');
+  const archive = jobs.run('archivePaper', root, { sourcePath, title: 'Sample' });
+  const scan = jobs.run('scanDownloads', root, dl);
+  assert.ok((await archive).ok);
+  assert.strictEqual((await scan).skippedCount, 1);
+  await jobs.drain();
+  assert.strictEqual(jobs.busy(), false);
+});
+
 test('parsePaperName extracts year venue title', () => {
   const p = paper.parsePaperName('2025_KDD_AutoCDSR_Revisiting Self-attention for Cross-domain Sequential Recommendation.pdf');
   assert.strictEqual(p.year, '2025');

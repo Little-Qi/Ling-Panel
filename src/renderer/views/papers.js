@@ -100,18 +100,7 @@
         el('button', {
           class: 'btn sm ghost',
           text: '忽略',
-          onclick: async () => {
-            await window.ling.paper.ignore({
-              sourcePath: x.sourcePath,
-              fingerprint: x.fingerprint,
-              fileName: x.fileName,
-            });
-            lastItems = lastItems.filter((i) => i.id !== x.id);
-            lastNon = lastNon.filter((i) => i.id !== x.id);
-            selected.delete(x.id);
-            lastIgnored = await window.ling.paper.listIgnored();
-            renderLists();
-          },
+          onclick: () => ignoreItems([x]),
         }),
       ]),
       el('div', { class: 'form-grid' }, [
@@ -153,6 +142,31 @@
   }
 
   let status;
+  let paintCurrentTabs = () => {};
+  let archiving = false;
+
+  async function ignoreItems(items) {
+    if (!items.length) {
+      status.textContent = '请先勾选要忽略的 PDF';
+      return;
+    }
+    try {
+      const result = await window.ling.paper.ignoreMany(items.map(({ sourcePath, fingerprint, fileName }) => ({
+        sourcePath, fingerprint, fileName,
+      })));
+      if (!result.ok) throw new Error(result.error);
+      const ids = new Set(items.map((item) => item.id));
+      lastItems = lastItems.filter((x) => !ids.has(x.id));
+      lastNon = lastNon.filter((x) => !ids.has(x.id));
+      for (const id of ids) selected.delete(id);
+      lastIgnored = result.ignored;
+      status.textContent = `已忽略 ${ids.size} 份，之后扫描不再显示`;
+      paintCurrentTabs();
+      renderLists();
+    } catch (err) {
+      status.textContent = '忽略失败：' + err.message;
+    }
+  }
 
   function renderLists(statusEl) {
     if (statusEl) status = statusEl;
@@ -217,48 +231,34 @@
       host.appendChild(el('div', { class: 'empty', text: '点「刷新库」看看文献夹' }));
       return;
     }
-    const q = el('input', {
-      class: 'input',
-      style: 'margin-bottom:8px',
-      placeholder: '按标题 / 文件名 / 主题过滤…',
-      oninput: (e) => {
-        const s = e.target.value.trim().toLowerCase();
-        host.querySelectorAll('[data-lib-row]').forEach((node) => {
-          const hay = node.getAttribute('data-hay') || '';
-          node.style.display = !s || hay.includes(s) ? '' : 'none';
-        });
-      },
+    const query = el('input', {
+      class: 'input', style: 'margin-bottom:8px', placeholder: '按标题 / 文件名 / 主题过滤…',
     });
-    host.appendChild(q);
     const list = el('div', { class: 'list' });
-    for (const x of lastLib.slice(0, 80)) {
-      list.appendChild(
-        el('div', {
-          class: 'item',
-          'data-lib-row': '1',
-          'data-hay': `${x.fileName} ${x.title} ${x.topic} ${x.venue}`.toLowerCase(),
-        }, [
+    let page = 0;
+    function paintLibrary() {
+      const term = query.value.trim().toLowerCase();
+      const rows = term ? lastLib.filter((x) =>
+        [x.fileName, x.title, x.topic, x.venue].some((s) => s?.toLowerCase().includes(term))) : lastLib;
+      list.innerHTML = '';
+      for (const x of rows.slice(page * 80, (page + 1) * 80)) {
+        list.appendChild(el('div', { class: 'item' }, [
           el('div', { class: 'col', style: 'flex:1;min-width:0' }, [
             el('div', { class: 'item-title', text: x.fileName }),
-            el('div', {
-              class: 'item-sub',
-              text: `${x.topic} · ${x.year}_${x.venue}${x.model ? '_' + x.model : ''}`,
-            }),
+            el('div', { class: 'item-sub', text: `${x.topic} · ${x.year}_${x.venue}${x.model ? '_' + x.model : ''}` }),
           ]),
-          el('button', {
-            class: 'btn sm',
-            text: '打开位置',
-            onclick: () => window.ling.paper.open(x.path),
-          }),
-        ])
-      );
+          el('button', { class: 'btn sm', text: '打开位置', onclick: () => window.ling.paper.open(x.path) }),
+        ]));
+      }
+      if (!rows.length) list.appendChild(el('div', { class: 'empty', text: '没有匹配的文献' }));
+      if (rows.length > 80) list.appendChild(LingUtil.pager(page, Math.ceil(rows.length / 80), (next) => {
+        page = next;
+        paintLibrary();
+      }));
     }
-    host.appendChild(list);
-    if (lastLib.length > 80) {
-      host.appendChild(
-        el('div', { class: 'muted', style: 'margin-top:6px', text: `仅显示最近 80 条 / 共 ${lastLib.length}` })
-      );
-    }
+    query.addEventListener('input', () => { page = 0; paintLibrary(); });
+    host.append(query, list);
+    paintLibrary();
   }
 
   async function renderPapers(root) {
@@ -292,20 +292,22 @@
         );
       }
     }
+    paintCurrentTabs = paintSubTabs;
 
-    async function doScan(force) {
+    async function doScan() {
       if (scanning) return;
       scanning = true;
       status.textContent = '扫描中（指纹缓存加速，首次较慢）…';
       try {
         const res = await window.ling.paper.scan();
+        if (!res.ok) throw new Error(res.error || '无法读取下载目录');
         lastItems = res.items || [];
         lastNon = res.nonPapers || [];
         lastIgnored = await window.ling.paper.listIgnored();
         selected = new Set(lastItems.map((x) => x.id));
         scannedOnce = true;
         status.textContent = `论文 ${lastItems.length} · 非论文 ${lastNon.length} · 已隐藏归档 ${res.skippedCount || 0} · 已忽略 ${res.skippedIgnoredCount || 0}`;
-        paintSubTabs();
+        paintCurrentTabs();
         renderLists();
       } catch (err) {
         status.textContent = `扫描失败：${err.message || err}`;
@@ -315,7 +317,7 @@
     }
 
     const bar = el('div', { class: 'toolbar' }, [
-      el('button', { class: 'btn primary', text: '重新扫描下载', onclick: () => doScan(true) }),
+      el('button', { class: 'btn primary', text: '重新扫描下载', onclick: doScan }),
       el('button', {
         class: 'btn',
         text: '全选当前页',
@@ -343,40 +345,35 @@
             status.textContent = '请先勾选要归档的 PDF';
             return;
           }
+          if (archiving) return;
+          archiving = true;
           status.textContent = `归档中 ${list.length} 份…`;
-          const results = await window.ling.paper.archiveMany(list);
-          const ok = results.filter((r) => r.ok).length;
-          const fail = results.length - ok;
-          const ids = new Set(list.map((x) => x.sourcePath));
-          lastItems = lastItems.filter((x) => !ids.has(x.sourcePath));
-          lastNon = lastNon.filter((x) => !ids.has(x.sourcePath));
-          selected = new Set();
-          lastLib = await window.ling.paper.list();
-          status.textContent = `完成：成功 ${ok} · 失败 ${fail}（重复/忽略会失败并提示）`;
-          paintSubTabs();
-          renderLists();
+          try {
+            const results = await window.ling.paper.archiveMany(list);
+            const ids = new Set(results.filter((r) => r.ok).map((r) => r.sourcePath));
+            const failed = results.filter((r) => !r.ok);
+            lastItems = lastItems.filter((x) => !ids.has(x.sourcePath));
+            lastNon = lastNon.filter((x) => !ids.has(x.sourcePath));
+            for (const id of ids) selected.delete(id);
+            lastLib = await window.ling.paper.list();
+            status.textContent = `已归档 ${ids.size} 份` + (failed.length ? ` · ${failed.length} 份待处理，${failed[0].error}` : '');
+            const warning = results.find((r) => r.warning)?.warning;
+            if (warning) status.textContent += ' · ' + warning;
+            paintCurrentTabs();
+            renderLists();
+          } catch (err) {
+            status.textContent = '归档失败：' + err.message;
+          } finally {
+            archiving = false;
+          }
         },
       }),
       el('button', {
         class: 'btn',
         text: '忽略所选',
         onclick: async () => {
-          const pool = activeSub === 'non' ? [...lastNon] : [...lastItems, ...lastNon];
-          const list = pool.filter((x) => selected.has(x.id));
-          for (const x of list) {
-            await window.ling.paper.ignore({
-              sourcePath: x.sourcePath,
-              fingerprint: x.fingerprint,
-              fileName: x.fileName,
-            });
-          }
-          lastItems = lastItems.filter((x) => !selected.has(x.id));
-          lastNon = lastNon.filter((x) => !selected.has(x.id));
-          selected = new Set();
-          lastIgnored = await window.ling.paper.listIgnored();
-          status.textContent = `已忽略 ${list.length} 份，之后扫描不再显示`;
-          paintSubTabs();
-          renderLists();
+          const pool = activeSub === 'non' ? lastNon : lastItems;
+          await ignoreItems(pool.filter((x) => selected.has(x.id)));
         },
       }),
       el('button', {
@@ -401,7 +398,8 @@
 
     // 只在进入本页且未扫过时自动扫一次，避免反复 IO
     if (!scannedOnce) {
-      await doScan(false);
+      if (scanning) status.textContent = '正在扫描下载目录…';
+      else doScan();
     } else {
       renderLists();
       status.textContent = `论文 ${lastItems.length} · 非论文 ${lastNon.length} · 已忽略 ${lastIgnored.length}（点「重新扫描」刷新）`;

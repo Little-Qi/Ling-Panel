@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 contextBridge.exposeInMainWorld('lm', {
   file: {
@@ -10,6 +10,14 @@ contextBridge.exposeInMainWorld('lm', {
     exportHtmlDialog: (name) => ipcRenderer.invoke('file:export-html-dialog', name),
     saveImage: (baseDir, dataUrl, hint) => ipcRenderer.invoke('file:save-image', baseDir, dataUrl, hint),
     current: () => ipcRenderer.invoke('app:current-file'),
+    // 拖拽进来的 File 对象拿不到路径，交给 webUtils 解析
+    pathForFile: (file) => {
+      try {
+        return webUtils.getPathForFile(file) || '';
+      } catch (_) {
+        return '';
+      }
+    },
   },
   recent: {
     list: () => ipcRenderer.invoke('recent:list'),
@@ -21,14 +29,18 @@ contextBridge.exposeInMainWorld('lm', {
     version: () => ipcRenderer.invoke('app:version'),
     confirm: (opts) => ipcRenderer.invoke('app:confirm', opts),
     close: () => ipcRenderer.invoke('window:close'),
-    confirmClose: () => ipcRenderer.invoke('window:confirm-close'),
+    closeReply: (request, decision) => ipcRenderer.invoke('window:close-reply', request, decision),
+    setTheme: (isDark) => ipcRenderer.send('theme:apply', !!isDark),
+    setDefaultMd: () => ipcRenderer.invoke('shell:set-default-md'),
   },
   shell: {
     showItem: (p) => ipcRenderer.invoke('shell:show-item', p),
+    openExternal: (url) => ipcRenderer.invoke('shell:open-external', url),
   },
   events: {
     on: (channel, handler) => {
       const allowed = new Set([
+        'app:will-close',
         'file:open-request',
         'file:new',
         'file:open-dialog',

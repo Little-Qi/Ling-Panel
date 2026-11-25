@@ -4,76 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
 
-function createMockDom() {
-  class Node {
-    constructor(type) {
-      this.nodeType = type;
-      this.childNodes = [];
-      this.classList = {
-        toggle: (name, force) => {
-          const has = this._classes && this._classes.has(name);
-          const next = force === undefined ? !has : !!force;
-          this._classes = this._classes || new Set();
-          if (next) this._classes.add(name);
-          else this._classes.delete(name);
-        },
-        contains: (name) => !!(this._classes && this._classes.has(name)),
-      };
-      this._classes = new Set();
-    }
-    appendChild(child) {
-      if (child == null || typeof child !== 'object' || (child.nodeType !== 1 && child.nodeType !== 3)) {
-        throw new Error("Failed to execute 'appendChild' on 'Node': parameter 1 is not of type 'Node'.");
-      }
-      this.childNodes.push(child);
-      return child;
-    }
-    append(...nodes) {
-      for (const n of nodes) this.appendChild(n);
-    }
-    addEventListener(type, fn) {
-      this._on = this._on || {};
-      this._on[type] = this._on[type] || [];
-      this._on[type].push(fn);
-    }
-    setAttribute(k, v) {
-      this[k] = v;
-    }
-  }
-  class Element extends Node {
-    constructor(tag) {
-      super(1);
-      this.tagName = String(tag).toUpperCase();
-      this.className = '';
-      this._text = '';
-    }
-    set textContent(v) {
-      this._text = String(v);
-      this.childNodes = [];
-    }
-    get textContent() {
-      if (this.childNodes.length) {
-        const own = this._text || '';
-        return own + this.childNodes.map((c) => c.textContent).join('');
-      }
-      return this._text || '';
-    }
-  }
-  class Text extends Node {
-    constructor(data) {
-      super(3);
-      this.data = data;
-    }
-    get textContent() {
-      return this.data;
-    }
-  }
-  const document = {
-    createElement: (t) => new Element(t),
-    createTextNode: (d) => new Text(d),
-  };
-  return { document, Element, Text };
-}
+const { createMockDom } = require('./helpers/mock-dom');
 
 function loadUtil() {
   const { document, Element } = createMockDom();
@@ -106,13 +37,13 @@ test('expandableText long text collapses then expands', () => {
   assert.strictEqual(toggle.textContent, '展开');
 
   // 点击展开
-  toggle._on.click[0]({ stopPropagation() {} });
+  toggle.dispatch('click', { stopPropagation() {} });
   assert.strictEqual(body.textContent, long);
   assert.strictEqual(toggle.textContent, '收起');
   assert.ok(body.classList.contains('is-open'));
 
   // 再点收起
-  toggle._on.click[0]({ stopPropagation() {} });
+  toggle.dispatch('click', { stopPropagation() {} });
   assert.ok(body.textContent.endsWith('…'));
   assert.strictEqual(toggle.textContent, '展开');
 });
@@ -130,6 +61,8 @@ test('HomeView clip rows use expandable preview (long clip)', async () => {
   sandbox.window = sandbox;
   sandbox.globalThis = sandbox;
   sandbox.window.ling = {
+    home: { overview: async () => ({ openCount: 0, overdueCount: 0, due: [], notes: [], links: [] }) },
+    clip: { summary: async () => ({ inbox: [{ id: 'c1', content: '很长的剪贴内容'.repeat(20) }], inboxCount: 1, clipCount: 0 }) },
     todo: { list: async () => [] },
     note: { list: async () => [] },
     link: { list: async () => [] },

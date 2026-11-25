@@ -5,6 +5,9 @@
   let sid = '';
   let role = 'q';
   let pending = null;
+  let repaintPending;
+  let sessionQuery = '';
+  let sessionPage = 0;
 
   function getSessionId() {
     return sid;
@@ -12,6 +15,7 @@
 
   function setPending(p) {
     pending = p || null;
+    if (App.mode === 'expanded' && App.currentTab === 'ailog') repaintPending?.();
   }
 
   function clearPending() {
@@ -63,9 +67,7 @@
       autoTitle: true,
     });
     pending = null;
-    role = (await window.ling.ai.suggestRole(sessionId)) || 'q';
     await App.refreshCurrent();
-    await App.refreshBadge();
   }
 
   /** 行内小输入（Electron 的 prompt() 不可用） */
@@ -109,12 +111,8 @@
     sessions = await window.ling.ai.sessions();
     if (sid && !sessions.find((s) => s.id === sid)) sid = '';
     if (!sid && sessions[0]) sid = sessions[0].id;
-    items = await window.ling.ai.items(sid || undefined);
-    if (sid) {
-      try {
-        role = (await window.ling.ai.suggestRole(sid)) || 'q';
-      } catch (_) {}
-    }
+    items = sid ? await window.ling.ai.items(sid) : [];
+    role = items.at(-1)?.role === 'q' ? 'a' : 'q';
 
     // —— 左栏：会话（可搜索） ——
     const sideHost = el('div', { id: 'aiSideHost' });
@@ -122,11 +120,10 @@
       const box = slot || sideHost;
       box.innerHTML = '';
 
-      let query = '';
       const searchInput = el('input', {
         class: 'input',
         type: 'search',
-        placeholder: '搜索会话…',
+        placeholder: '搜索会话…', value: sessionQuery,
         style: 'margin-bottom:8px',
       });
 
@@ -141,10 +138,11 @@
 
       function paintList() {
         list.innerHTML = '';
-        const q = query.trim().toLowerCase();
-        const shown = sessions.filter((s) => matches(s, q));
-        // 会话很多时：默认只画前 80 条，搜索后再全量过滤结果
-        const limited = !q && shown.length > 80 ? shown.slice(0, 80) : shown;
+        const q = sessionQuery.trim().toLowerCase();
+        const shown = q ? sessions.filter((s) => matches(s, q)) : sessions;
+        const pageCount = Math.max(1, Math.ceil(shown.length / 80));
+        sessionPage = Math.min(sessionPage, pageCount - 1);
+        const limited = shown.slice(sessionPage * 80, (sessionPage + 1) * 80);
         if (!shown.length) {
           list.appendChild(
             el('div', {
@@ -167,17 +165,16 @@
             })
           );
         }
-        count.textContent = sessions.length
-          ? q
-            ? `${shown.length} / ${sessions.length} 个会话`
-            : shown.length > 80
-              ? `共 ${shown.length} 个，显示最近 80 · 可搜索`
-              : `共 ${shown.length} 个会话`
-          : '';
+        count.textContent = q ? `${shown.length} / ${sessions.length} 个会话` : `共 ${sessions.length} 个会话`;
+        if (pageCount > 1) list.appendChild(LingUtil.pager(sessionPage, pageCount, (page) => {
+          sessionPage = page;
+          paintList();
+        }));
       }
 
       searchInput.addEventListener('input', (e) => {
-        query = e.target.value || '';
+        sessionQuery = e.target.value || '';
+        sessionPage = 0;
         paintList();
       });
 
@@ -198,6 +195,8 @@
                   submitText: '创建',
                   onSubmit: async (v) => {
                     sid = (await window.ling.ai.createSession(v || '新会话')).id;
+                    sessionQuery = '';
+                    sessionPage = 0;
                     await App.refreshCurrent();
                   },
                 }),
@@ -403,24 +402,16 @@
       style: 'min-height:72px',
       placeholder: '支持 Markdown…',
     });
-    const roleRow = el('div', { class: 'row', style: 'gap:6px;margin-bottom:8px' }, [
-      el('button', {
-        class: 'btn sm' + (role === 'q' ? ' primary' : ''),
-        text: '提问 Q',
-        onclick: () => {
-          role = 'q';
-          App.refreshCurrent();
-        },
-      }),
-      el('button', {
-        class: 'btn sm' + (role === 'a' ? ' primary' : ''),
-        text: '回答 A',
-        onclick: () => {
-          role = 'a';
-          App.refreshCurrent();
-        },
-      }),
-    ]);
+    const roleButtons = ['q', 'a'].map((value) => el('button', {
+      class: 'btn sm' + (role === value ? ' primary' : ''),
+      text: value === 'q' ? '提问 Q' : '回答 A',
+      onclick: () => {
+        role = value;
+        roleButtons.forEach((button, i) => button.classList.toggle('primary', role === (i === 0 ? 'q' : 'a')));
+        paintPending();
+      },
+    }));
+    const roleRow = el('div', { class: 'row', style: 'gap:6px;margin-bottom:8px' }, roleButtons);
     const manual = el('div', { class: 'card ai-composer' }, [
       el('h3', { text: '记一笔' }),
       roleRow,
@@ -455,9 +446,7 @@
               autoTitle: true,
             });
             ta.value = '';
-            role = (await window.ling.ai.suggestRole(sid)) || 'q';
             await App.refreshCurrent();
-            await App.refreshBadge();
           },
         }),
       ]),
@@ -467,6 +456,7 @@
     paintSide(sideHost);
     const main = el('div', { class: 'ai-main' }, [box, list]);
     root.append(el('div', { class: 'ai-layout' }, [side, main]));
+    repaintPending = paintPending;
     paintPending();
   }
 

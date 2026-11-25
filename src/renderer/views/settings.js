@@ -402,7 +402,9 @@
       el('div', {
         class: 'muted',
         style: 'margin-bottom:10px',
-        text: '用「灵墨 LingMark」打开笔记，功能更全。留空则自动探测安装位置。',
+        text:
+          '用「灵墨 LingMark」打开笔记，功能更全。留空则自动探测安装位置。' +
+          '路径含空格时可直接粘贴，不需要加引号。',
       }),
       el('div', { class: 'field', style: 'margin-bottom:10px' }, [
         el('label', { text: '编辑器可执行文件' }),
@@ -410,7 +412,7 @@
           class: 'input',
           id: 'mdEditorPath',
           value: settings.mdEditorPath || '',
-          placeholder: '例如 C:\\Program Files\\LingMark\\LingMark.exe',
+          placeholder: '例如 D:\\Program Files\\LingMark\\LingMark.exe',
           onchange: async (e) => {
             await saveSettings({ mdEditorPath: e.target.value.trim() });
           },

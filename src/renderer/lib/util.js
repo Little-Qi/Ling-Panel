@@ -143,5 +143,12 @@
     );
   }
 
-  global.LingUtil = { formatTime, formatDay, formatDuration, dueLabel, isOverdue, uid, debounce, el, flattenChildren, expandableText, bindImeSafe };
+  function pager(page, pageCount, change) {
+    return el('div', { class: 'row' }, [
+      el('button', { class: 'btn sm', text: '上一页', disabled: page === 0, onclick: () => change(page - 1) }),
+      el('span', { class: 'muted', text: (page + 1) + ' / ' + pageCount }),
+      el('button', { class: 'btn sm', text: '下一页', disabled: page + 1 >= pageCount, onclick: () => change(page + 1) }),
+    ]);
+  }
+  global.LingUtil = { formatTime, formatDay, formatDuration, dueLabel, isOverdue, uid, debounce, el, flattenChildren, expandableText, bindImeSafe, pager };
 })(typeof window !== 'undefined' ? window : globalThis);

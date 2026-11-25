@@ -169,7 +169,9 @@ function saveIgnoreDb(root, db) {
     if (it.fp) byFp[it.fp] = 1;
     if (it.sourcePath) byPath[it.sourcePath] = 1;
   }
-  fs.writeFileSync(f, JSON.stringify({ items, byFp, byPath }, null, 2), 'utf8');
+  fs.writeFileSync(f + '.tmp', JSON.stringify({ items, byFp, byPath }, null, 2), 'utf8');
+  fs.renameSync(f + '.tmp', f);
+  return items;
 }
 
 function isIgnored(root, sourcePath, fp) {
@@ -179,21 +181,31 @@ function isIgnored(root, sourcePath, fp) {
   return false;
 }
 
-function addIgnore(root, { sourcePath, fp, fileName, reason }) {
-  const db = loadIgnoreDb(root);
-  const rec = {
-    sourcePath: sourcePath || '',
-    fp: fp || '',
-    fileName: fileName || (sourcePath ? path.basename(sourcePath) : ''),
-    reason: reason || 'manual',
-    at: new Date().toISOString(),
-  };
-  db.items = (db.items || []).filter((x) => !(x.fp && rec.fp && x.fp === rec.fp) && x.sourcePath !== rec.sourcePath);
-  db.items.push(rec);
-  db.byFp[rec.fp] = 1;
-  if (rec.sourcePath) db.byPath[rec.sourcePath] = 1;
-  saveIgnoreDb(root, db);
-  return rec;
+function addIgnores(root, entries) {
+  const saved = loadIgnoreDb(root).items;
+  const kept = new Set(saved);
+  const byPath = new Map(saved.map((x) => [x.sourcePath, x]));
+  const byFp = new Map(saved.map((x) => [x.fp, x]));
+  for (const entry of entries) {
+    const { sourcePath = '', fileName, reason = 'manual' } = entry;
+    const fp = entry.fp || entry.fingerprint || '';
+    if (!sourcePath && !fp) continue;
+    const row = { sourcePath, fp, fileName: fileName || path.basename(sourcePath), reason, at: new Date().toISOString() };
+    if (sourcePath) {
+      kept.delete(byPath.get(sourcePath));
+      byPath.set(sourcePath, row);
+    }
+    if (fp) {
+      kept.delete(byFp.get(fp));
+      byFp.set(fp, row);
+    }
+    kept.add(row);
+  }
+  return saveIgnoreDb(root, { items: [...kept] });
+}
+
+function addIgnore(root, entry) {
+  return addIgnores(root, [entry]).at(-1);
 }
 
 function removeIgnore(root, { sourcePath, fp }) {
@@ -260,7 +272,8 @@ function hashCachePath(root) {
 function loadHashCache(root) {
   const file = hashCachePath(root);
   try {
-    if (fs.existsSync(file)) return JSON.parse(fs.readFileSync(file, 'utf8'));
+    const cache = JSON.parse(fs.readFileSync(file, 'utf8'));
+    if (cache?.files && typeof cache.files === 'object') return cache;
   } catch (_) {}
   return { files: {} };
 }
@@ -268,75 +281,96 @@ function loadHashCache(root) {
 function saveHashCache(root, cache) {
   const file = hashCachePath(root);
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(cache, null, 2), 'utf8');
+  fs.writeFileSync(file + '.tmp', JSON.stringify(cache), 'utf8');
+  fs.renameSync(file + '.tmp', file);
 }
 
-/** 带缓存的内容指纹（path + size + mtime 未变则复用） */
+/** 同一次扫描/归档共享一个索引，只有新增或变更的指纹需要落盘。 */
+class FingerprintIndex {
+  constructor(root) {
+    this.root = root;
+    this.cache = loadHashCache(root);
+    this.dirty = false;
+  }
+
+  get(file, stat) {
+    try {
+      stat = stat || fs.statSync(file);
+    } catch {
+      return '';
+    }
+    const record = this.cache.files[file];
+    const sig = stat.size + ':' + Math.floor(stat.mtimeMs);
+    if (record?.sig === sig && record.fp) return record.fp;
+    const fp = contentFingerprint(file);
+    if (fp) this.remember(file, stat, fp);
+    return fp;
+  }
+
+  remember(file, stat, fp) {
+    this.cache.files[file] = { sig: stat.size + ':' + Math.floor(stat.mtimeMs), fp, mtime: stat.mtime.toISOString() };
+    this.dirty = true;
+  }
+
+  forget(file) {
+    if (Object.hasOwn(this.cache.files, file)) {
+      delete this.cache.files[file];
+      this.dirty = true;
+    }
+  }
+
+  flush() {
+    if (this.dirty) saveHashCache(this.root, this.cache);
+    this.dirty = false;
+  }
+}
+
 function fingerprintCached(root, filePath) {
-  const cache = loadHashCache(root);
-  let st;
-  try {
-    st = fs.statSync(filePath);
-  } catch {
-    return '';
-  }
-  const key = filePath;
-  const rec = cache.files[key];
-  const sig = `${st.size}:${Math.floor(st.mtimeMs)}`;
-  if (rec && rec.sig === sig && rec.fp) return rec.fp;
-  const fp = contentFingerprint(filePath);
-  if (fp) {
-    cache.files[key] = { sig, fp, mtime: st.mtime.toISOString() };
-    saveHashCache(root, cache);
-  }
+  const index = new FingerprintIndex(root);
+  const fp = index.get(filePath);
+  index.flush();
   return fp;
 }
 
-/** 进程内缓存：避免每次扫描都全量重读库指纹 */
-const _libFpCache = { root: null, byFp: null, at: 0 };
+let cachedLibrary = null;
+function invalidateLibFpCache() { cachedLibrary = null; }
 
-function invalidateLibFpCache() {
-  _libFpCache.root = null;
-  _libFpCache.byFp = null;
-}
-
-/**
- * 库内 PDF 内容指纹集合（带短 TTL 进程缓存，降低重复扫描开销）
- */
-function libraryFingerprints(root) {
-  const now = Date.now();
-  if (_libFpCache.root === root && _libFpCache.byFp && now - _libFpCache.at < 60 * 1000) {
-    return { byFp: _libFpCache.byFp, cache: loadHashCache(root) };
-  }
-  const cache = loadHashCache(root);
+function readCatalog(root, index, summary) {
   const byFp = new Map();
   const folders = listTopicFolders(root);
   for (const topic of folders) {
     const dir = path.join(root, topic);
-    let names = [];
-    try {
-      names = fs.readdirSync(dir);
-    } catch {
-      continue;
-    }
-    for (const f of names) {
-      if (!/\.pdf$/i.test(f)) continue;
-      const full = path.join(dir, f);
-      const fp = fingerprintCached(root, full);
-      if (fp) byFp.set(fp, full);
+    if (summary) summary.topic_counts[topic] = 0;
+    if (!fs.existsSync(dir)) continue;
+    for (const name of fs.readdirSync(dir)) {
+      if (!/\.pdf$/i.test(name)) continue;
+      const full = path.join(dir, name);
+      if (index) {
+        const fp = index.get(full);
+        if (fp) byFp.set(fp, full);
+      }
+      if (summary) countPaper(summary, topic, name);
     }
   }
-  _libFpCache.root = root;
-  _libFpCache.byFp = byFp;
-  _libFpCache.at = now;
-  return { byFp, cache };
+  return { byFp, folders };
+}
+
+function libraryFingerprints(root, index) {
+  const own = !index;
+  index = index || new FingerprintIndex(root);
+  if (!cachedLibrary || cachedLibrary.root !== root || Date.now() - cachedLibrary.at >= 60000) {
+    cachedLibrary = { root, at: Date.now(), byFp: readCatalog(root, index).byFp };
+  }
+  if (own) index.flush();
+  return { byFp: cachedLibrary.byFp, cache: index.cache };
 }
 
 function isDuplicateContent(root, sourcePath) {
-  const fp = fingerprintCached(root, sourcePath);
-  if (!fp) return false;
-  const { byFp } = libraryFingerprints(root);
-  return byFp.has(fp);
+  const index = new FingerprintIndex(root);
+  const fp = index.get(sourcePath);
+  const { byFp } = libraryFingerprints(root, index);
+  index.flush();
+  return !!fp && byFp.has(fp);
 }
 
 /** 从文件名弱解析 year / venue / model / title */
@@ -495,9 +529,8 @@ function appendRenameMap(root, row) {
   return file;
 }
 
-function rescanSummary(root) {
-  const topics = listTopicFolders(root);
-  const summary = {
+function emptySummary() {
+  return {
     updated_at: new Date().toISOString().slice(0, 19),
     total: 0,
     with_model_name: 0,
@@ -505,23 +538,28 @@ function rescanSummary(root) {
     venue_counts: {},
     topic_counts: {},
   };
-  for (const topic of topics) {
-    const dir = path.join(root, topic);
-    let n = 0;
-    for (const f of fs.readdirSync(dir)) {
-      if (!/\.pdf$/i.test(f)) continue;
-      n += 1;
-      summary.total += 1;
-      const parsed = parsePaperName(f);
-      if (parsed.model) summary.with_model_name += 1;
-      summary.venue_counts[parsed.venue] = (summary.venue_counts[parsed.venue] || 0) + 1;
-    }
-    summary.topic_counts[topic] = n;
-  }
+}
+
+function countPaper(summary, topic, name) {
+  const parsed = parsePaperName(name);
+  summary.total += 1;
+  summary.topic_counts[topic] = (summary.topic_counts[topic] || 0) + 1;
+  if (parsed.model) summary.with_model_name += 1;
+  summary.venue_counts[parsed.venue] = (summary.venue_counts[parsed.venue] || 0) + 1;
+}
+
+function saveSummary(root, summary) {
   const file = path.join(root, '_manifest', 'summary.json');
   fs.mkdirSync(path.dirname(file), { recursive: true });
-  fs.writeFileSync(file, JSON.stringify(summary, null, 2), 'utf8');
+  fs.writeFileSync(file + '.tmp', JSON.stringify(summary, null, 2), 'utf8');
+  fs.renameSync(file + '.tmp', file);
   return summary;
+}
+
+function rescanSummary(root) {
+  const summary = emptySummary();
+  readCatalog(root, null, summary);
+  return saveSummary(root, summary);
 }
 
 /**
@@ -548,7 +586,8 @@ function scanDownloads(root, downloadsDir) {
   if (!fs.existsSync(dir)) return empty;
 
   ensurePaperTree(root);
-  const { byFp } = libraryFingerprints(root);
+  const index = new FingerprintIndex(root);
+  const { byFp } = libraryFingerprints(root, index);
   const ignoreDb = loadIgnoreDb(root);
 
   for (const name of fs.readdirSync(dir)) {
@@ -568,7 +607,7 @@ function scanDownloads(root, downloadsDir) {
       continue;
     }
 
-    const fp = fingerprintCached(root, full);
+    const fp = index.get(full, st);
     if (fp && ignoreDb.byFp[fp]) {
       skippedIgnored.push({ sourcePath: full, fileName: name, fp, reason: 'fp' });
       continue;
@@ -619,6 +658,7 @@ function scanDownloads(root, downloadsDir) {
     else items.push(row);
   }
 
+  index.flush();
   const byTime = (a, b) => (a.mtime < b.mtime ? 1 : -1);
   items.sort(byTime);
   nonPapers.sort(byTime);
@@ -661,7 +701,7 @@ function uniqueDestPath(destPath) {
  * 归档一份 PDF（默认复制到 D:\paper，保留下载原件）
  * 内容指纹已在库中则拒绝重复入库。
  */
-function archivePaper(root, payload) {
+function archiveOne(root, payload, { index, byFp, folders, ignoreDb, summary }) {
   const {
     sourcePath,
     topic,
@@ -675,10 +715,7 @@ function archivePaper(root, payload) {
   if (!sourcePath || !fs.existsSync(sourcePath)) {
     return { ok: false, error: '源文件不存在' };
   }
-  ensurePaperTree(root);
-
-  const fp = fingerprintCached(root, sourcePath);
-  const { byFp } = libraryFingerprints(root);
+  const fp = index.get(sourcePath);
   if (fp && byFp.has(fp)) {
     return {
       ok: false,
@@ -688,7 +725,7 @@ function archivePaper(root, payload) {
       fingerprint: fp,
     };
   }
-  if (isIgnored(root, sourcePath, fp)) {
+  if (ignoreDb.byPath[sourcePath] || (fp && ignoreDb.byFp[fp])) {
     return {
       ok: false,
       error: '该文件已在忽略列表',
@@ -697,14 +734,14 @@ function archivePaper(root, payload) {
     };
   }
 
-  const folders = listTopicFolders(root);
   const topicId = folders.includes(topic) ? topic : classifyTopic(`${title} ${sourcePath}`);
 
+  const parsed = parsePaperName(sourcePath);
   const meta0 = {
-    year: year || parsePaperName(sourcePath).year,
-    venue: venue || parsePaperName(sourcePath).venue,
-    model: model || parsePaperName(sourcePath).model,
-    title: title || parsePaperName(sourcePath).title,
+    year: year || parsed.year,
+    venue: venue || parsed.venue,
+    model: model || parsed.model,
+    title: title || parsed.title,
   };
   let meta = meta0;
   try {
@@ -718,63 +755,94 @@ function archivePaper(root, payload) {
     };
   } catch (_) {}
 
-  let destName = formatPaperFileName(meta);
-  let destPath = uniqueDestPath(path.join(root, topicId, destName));
-  destName = path.basename(destPath);
-
-  if (mode === 'move') {
-    fs.renameSync(sourcePath, destPath);
-  } else {
-    fs.copyFileSync(sourcePath, destPath);
-  }
-
-  // 登记目标文件指纹
-  const destFp = fingerprintCached(root, destPath);
-  const cache = loadHashCache(root);
-  if (destFp) {
-    const st0 = fs.statSync(destPath);
-    cache.files[destPath] = {
-      sig: `${st0.size}:${Math.floor(st0.mtimeMs)}`,
-      fp: destFp,
-      mtime: st0.mtime.toISOString(),
-    };
-    saveHashCache(root, cache);
-  }
-
-  const st = fs.statSync(destPath);
-  const row = {
-    filename: destName,
-    topic: topicId,
-    year: meta.year,
-    venue: meta.venue,
-    model: meta.model,
-    title: meta.title,
-    size_kb: Math.round(st.size / 102.4) / 10,
-    mtime: st.mtime.toISOString().slice(0, 19).replace('T', ' '),
-    dest_path: destPath,
-  };
-  appendManifest(root, [row]);
-  appendRenameMap(root, {
-    folder: topicId,
-    prev_name: path.basename(sourcePath),
-    new_name: destName,
-    year: meta.year,
-    venue: meta.venue,
-    model: meta.model,
-    title: meta.title,
-    action: mode === 'move' ? 'moved' : 'copied',
-    dest_path: destPath,
+  const destPath = uniqueDestPath(path.join(root, topicId, formatPaperFileName(meta)));
+  const destName = path.basename(destPath);
+  const logs = ['paper_manifest.csv', 'rename_map.csv'].map((name) => {
+    const file = path.join(root, '_manifest', name);
+    return { file, size: fs.statSync(file, { throwIfNoEntry: false })?.size };
   });
-  invalidateLibFpCache();
 
+  // 同卷移动只创建硬链接，跨卷则复制。目录清单成功写入后才移除源文件。
+  if (mode === 'move') {
+    try {
+      fs.linkSync(sourcePath, destPath);
+    } catch (err) {
+      if (err.code === 'EEXIST') throw err;
+      fs.copyFileSync(sourcePath, destPath, fs.constants.COPYFILE_EXCL);
+    }
+  } else {
+    fs.copyFileSync(sourcePath, destPath, fs.constants.COPYFILE_EXCL);
+  }
+
+  let st;
+  try {
+    st = fs.statSync(destPath);
+    const row = { ...meta, dest_path: destPath };
+    appendManifest(root, [{
+      ...row, filename: destName, topic: topicId,
+      size_kb: Math.round(st.size / 102.4) / 10,
+      mtime: st.mtime.toISOString().slice(0, 19).replace('T', ' '),
+    }]);
+    appendRenameMap(root, {
+      ...row, folder: topicId, prev_name: path.basename(sourcePath), new_name: destName,
+      action: mode === 'move' ? 'moved' : 'copied',
+    });
+    if (mode === 'move') fs.unlinkSync(sourcePath);
+  } catch (error) {
+    for (const { file, size } of logs) {
+      const current = fs.statSync(file, { throwIfNoEntry: false });
+      if (current && size === undefined) fs.unlinkSync(file);
+      else if (current && current.size > size) fs.truncateSync(file, size);
+    }
+    fs.unlinkSync(destPath);
+    throw error;
+  }
+
+  if (mode === 'move') index.forget(sourcePath);
+  const destFp = fp || index.get(destPath, st);
+  if (destFp) {
+    byFp.set(destFp, destPath);
+    index.remember(destPath, st, destFp);
+  }
+  countPaper(summary, topicId, destName);
   return {
     ok: true,
     destPath,
     destName,
     topic: topicId,
     fingerprint: destFp,
-    summary: rescanSummary(root),
+    sourcePath,
   };
+}
+
+function archivePapers(root, payloads) {
+  ensurePaperTree(root);
+  const index = new FingerprintIndex(root);
+  const summary = emptySummary();
+  const catalog = readCatalog(root, index, summary);
+  const batch = { ...catalog, index, summary, ignoreDb: loadIgnoreDb(root) };
+  invalidateLibFpCache();
+  const results = payloads.map((item) => {
+    try {
+      return { sourcePath: item?.sourcePath, ...archiveOne(root, item, batch) };
+    } catch (error) {
+      return { ok: false, sourcePath: item?.sourcePath, error: error.message };
+    }
+  });
+  const warnings = [];
+  try { index.flush(); } catch (error) { warnings.push('指纹缓存未写入：' + error.message); }
+  if (results.some((r) => r.ok)) {
+    try { saveSummary(root, summary); } catch (error) { warnings.push('归档统计未写入：' + error.message); }
+    if (warnings.length) {
+      for (const result of results) if (result.ok) result.warning = warnings.join(' · ');
+    }
+  }
+  return { results, summary };
+}
+
+function archivePaper(root, payload) {
+  const { results, summary } = archivePapers(root, [payload]);
+  return results[0].ok ? { ...results[0], summary } : results[0];
 }
 
 function listLibrary(root) {
@@ -824,6 +892,7 @@ module.exports = {
   listTopicFolders,
   scanDownloads,
   archivePaper,
+  archivePapers,
   listLibrary,
   rescanSummary,
   appendManifest,
@@ -838,6 +907,7 @@ module.exports = {
   saveIgnoreDb,
   isIgnored,
   addIgnore,
+  addIgnores,
   removeIgnore,
   listIgnored,
   invalidateLibFpCache,

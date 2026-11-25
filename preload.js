@@ -1,6 +1,13 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('ling', {
+  clip: {
+    process: (ids, action) => ipcRenderer.invoke('clip:process', ids, action),
+    summary: () => ipcRenderer.invoke('clip:summary'),
+  },
+  home: {
+    overview: () => ipcRenderer.invoke('home:overview'),
+  },
   store: {
     get: (key) => ipcRenderer.invoke('store:get', key),
     set: (key, value) => ipcRenderer.invoke('store:set', key, value),
@@ -25,6 +32,9 @@ contextBridge.exposeInMainWorld('ling', {
   },
   todo: {
     list: () => ipcRenderer.invoke('todo:list'),
+    board: (pages, expandDone) => ipcRenderer.invoke('todo:board', pages, expandDone),
+    openCount: () => ipcRenderer.invoke('todo:open-count'),
+    clearDone: () => ipcRenderer.invoke('todo:clear-done'),
     create: (payload) => ipcRenderer.invoke('todo:create', payload),
     update: (id, patch) => ipcRenderer.invoke('todo:update', id, patch),
     remove: (id) => ipcRenderer.invoke('todo:remove', id),
@@ -33,6 +43,8 @@ contextBridge.exposeInMainWorld('ling', {
   },
   note: {
     list: () => ipcRenderer.invoke('note:list'),
+    page: (opts) => ipcRenderer.invoke('note:page', opts),
+    get: (id) => ipcRenderer.invoke('note:get', id),
     create: (payload) => ipcRenderer.invoke('note:create', payload),
     update: (id, patch) => ipcRenderer.invoke('note:update', id, patch),
     remove: (id) => ipcRenderer.invoke('note:remove', id),
@@ -40,6 +52,7 @@ contextBridge.exposeInMainWorld('ling', {
   },
   link: {
     list: () => ipcRenderer.invoke('link:list'),
+    groups: (pages) => ipcRenderer.invoke('link:groups', pages),
     create: (payload) => ipcRenderer.invoke('link:create', payload),
     update: (id, patch) => ipcRenderer.invoke('link:update', id, patch),
     remove: (id) => ipcRenderer.invoke('link:remove', id),
@@ -57,6 +70,7 @@ contextBridge.exposeInMainWorld('ling', {
     rescanSummary: () => ipcRenderer.invoke('paper:rescan-summary'),
     open: (p) => ipcRenderer.invoke('paper:open', p),
     ignore: (payload) => ipcRenderer.invoke('paper:ignore', payload),
+    ignoreMany: (items) => ipcRenderer.invoke('paper:ignore-many', items),
     unignore: (payload) => ipcRenderer.invoke('paper:unignore', payload),
     listIgnored: () => ipcRenderer.invoke('paper:list-ignored'),
     pdfHints: (filePath) => ipcRenderer.invoke('paper:pdf-hints', filePath),

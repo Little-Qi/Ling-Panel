@@ -19,9 +19,12 @@ function writeFileAtomic(file, content) {
 
 function readFile(file) {
   try {
+    // 去掉 UTF-8 BOM：Windows 上不少编辑器保存 .md 会带 BOM，
+    // 不清理的话首行 "# 标题" 会被当成普通段落，渲染和大纲都失效
+    const content = fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, '');
     return {
       ok: true,
-      content: fs.readFileSync(file, 'utf8'),
+      content,
       path: file,
       name: path.basename(file),
       // 图片粘贴时要落到文档同级目录，渲染层拿不到 node 的 path，这里一并给出

@@ -5,9 +5,10 @@
  * 与 LingPanel 完全独立（不共享代码、不共享数据目录），
  * 但可被 LingPanel 以命令行方式唤起：LingMark.exe <文件路径>
  */
-const { app, BrowserWindow, ipcMain, dialog, Menu, shell, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, Menu, shell, screen, nativeTheme } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { execFileSync } = require('child_process');
 
 const fsService = require('./src/main/fs-service');
 
@@ -37,6 +38,9 @@ let recent = null;
 let currentFile = '';
 let watcher = null;
 let quitting = false;
+let closeTimer = null;
+let closeRequest = 0;
+let waitingForClose = false;
 
 function statePath() {
   return path.join(app.getPath('userData'), 'state.json');
@@ -61,10 +65,17 @@ function saveState(patch) {
 function createWindow() {
   const state = loadState();
   const bounds = state.bounds || {};
+  const workArea = screen.getPrimaryDisplay().workArea;
   let width = Number(bounds.width) || 1180;
   let height = Number(bounds.height) || 780;
+  // 高分屏/小屏上，默认尺寸或上次保存的尺寸可能比工作区还大，先夹住
+  width = Math.max(720, Math.min(width, workArea.width - 32));
+  height = Math.max(480, Math.min(height, workArea.height - 32));
+
+  // 位置只在它仍落在某块屏幕内时沿用；否则交给系统居中，避免窗口跑到屏幕外
+  let x;
+  let y;
   if (bounds.x != null && bounds.y != null) {
-    // 落在已断开的显示器上时回退到主屏
     const inArea = screen.getAllDisplays().some((d) => {
       const a = d.workArea;
       return (
@@ -74,21 +85,29 @@ function createWindow() {
         bounds.y + height <= a.y + a.height + 50
       );
     });
-    if (!inArea) {
-      width = 1180;
-      height = 780;
+    if (inArea) {
+      x = bounds.x;
+      y = bounds.y;
     }
   }
 
+  const dark = nativeTheme.shouldUseDarkColors;
   win = new BrowserWindow({
-    x: bounds.x,
-    y: bounds.y,
+    x,
+    y,
     width,
     height,
     minWidth: 720,
     minHeight: 480,
     show: false,
-    backgroundColor: '#111418',
+    autoHideMenuBar: true,
+    titleBarStyle: 'hidden',
+    titleBarOverlay: {
+      color: dark ? '#131820' : '#ffffff',
+      symbolColor: dark ? '#e7ebf1' : '#20242b',
+      height: 48,
+    },
+    backgroundColor: dark ? '#0e1116' : '#fbfaf7',
     title: '灵墨',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
@@ -98,15 +117,22 @@ function createWindow() {
     },
   });
 
-  win.loadFile(path.join(__dirname, 'src', 'renderer', 'index.html'));
-
-  win.once('ready-to-show', () => {
+  // 先挂事件再加载页面：本地文件很快，避免 ready-to-show 比监听器先到
+  let shown = false;
+  const showWindow = () => {
+    if (shown || !win || win.isDestroyed()) return;
+    shown = true;
     win.show();
     if (pendingFile) {
       win.webContents.send('file:open-request', pendingFile);
       pendingFile = '';
     }
-  });
+  };
+  win.once('ready-to-show', showWindow);
+  // 兜底：个别环境（禁用 GPU / 远程会话）不会触发 ready-to-show
+  win.webContents.once('did-finish-load', () => setTimeout(showWindow, 150));
+
+  win.loadFile(path.join(__dirname, 'src', 'renderer', 'index.html'));
 
   let saveTimer = null;
   const persistBounds = () => {
@@ -120,12 +146,36 @@ function createWindow() {
 
   win.on('close', (e) => {
     if (quitting) return;
-    // 交给渲染层确认未保存改动
     e.preventDefault();
-    win.webContents.send('app:will-close');
+    if (waitingForClose) return;
+    waitingForClose = true;
+    const request = ++closeRequest;
+    // 超时只询问用户。正常响应后可一直停留在确认或另存为对话框。
+    closeTimer = setTimeout(async () => {
+      if (!waitingForClose || request !== closeRequest) return;
+      ++closeRequest;
+      try {
+        const { response } = await dialog.showMessageBox(win, {
+          type: 'warning', message: '编辑器暂时没有响应',
+          detail: '强制退出会丢失尚未保存的修改。',
+          buttons: ['继续等待', '强制退出'], defaultId: 0, cancelId: 0,
+        });
+        waitingForClose = false;
+        if (response === 1) quitWindow();
+        else if (win && !win.isDestroyed()) win.close();
+      } catch (error) {
+        waitingForClose = false;
+        console.error('[LingMark] 关闭确认失败', error);
+      }
+    }, 8000);
+    if (!win.webContents.isDestroyed()) win.webContents.send('app:will-close', request);
   });
 
   win.on('closed', () => {
+    if (closeTimer) {
+      clearTimeout(closeTimer);
+      closeTimer = null;
+    }
     win = null;
   });
 
@@ -221,6 +271,16 @@ function send(channel, payload) {
   if (win && !win.isDestroyed()) win.webContents.send(channel, payload);
 }
 
+/** 渲染层确认（或用户强制）关闭：清掉兜底定时器并放行 close */
+function quitWindow() {
+  if (closeTimer) {
+    clearTimeout(closeTimer);
+    closeTimer = null;
+  }
+  quitting = true;
+  if (win && !win.isDestroyed()) win.close();
+}
+
 function registerIpc() {
   ipcMain.handle('file:read', (_e, file) => fsService.readFile(file));
   ipcMain.handle('file:write', (_e, file, content) => fsService.writeFile(file, content));
@@ -282,7 +342,7 @@ function registerIpc() {
       type: opts && opts.type === 'error' ? 'warning' : 'question',
       buttons: (opts && opts.buttons) || ['确定', '取消'],
       defaultId: 0,
-      cancelId: 1,
+      cancelId: opts?.cancelId ?? Math.min(1, (opts?.buttons || ['确定', '取消']).length - 1),
       title: (opts && opts.title) || '灵墨',
       message: (opts && opts.message) || '',
       detail: (opts && opts.detail) || '',
@@ -299,15 +359,66 @@ function registerIpc() {
     }
   });
 
+  ipcMain.handle('shell:open-external', (_e, url) => {
+    try {
+      const target = String(url || '');
+      if (!/^(https?:|mailto:)/i.test(target)) return false;
+      shell.openExternal(target);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  });
+
+  // 把 .md / .markdown 的默认打开方式指向当前 LingMark
+  ipcMain.handle('shell:set-default-md', () => {
+    try {
+      const exe = process.execPath;
+      if (!exe || !fs.existsSync(exe)) return { ok: false, error: '找不到 LingMark.exe' };
+      const reg = path.join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'reg.exe');
+      const command = `"${exe}" "%1"`;
+      const writes = [
+        ['HKCU\\Software\\Classes\\.md', 'LingMark.md'],
+        ['HKCU\\Software\\Classes\\.markdown', 'LingMark.md'],
+        ['HKCU\\Software\\Classes\\LingMark.md', 'Markdown 文档'],
+        ['HKCU\\Software\\Classes\\LingMark.md\\shell\\open\\command', command],
+      ];
+      for (const [key, value] of writes) {
+        execFileSync(reg, ['add', key, '/ve', '/d', value, '/f'], {
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+      }
+      return { ok: true, exe };
+    } catch (err) {
+      return { ok: false, error: String((err && err.message) || err) };
+    }
+  });
+
+  // 渲染层切换主题时，把原生标题栏按钮的颜色一起换掉
+  ipcMain.on('theme:apply', (_e, isDark) => {
+    if (!win || win.isDestroyed()) return;
+    try {
+      win.setTitleBarOverlay({
+        color: isDark ? '#131820' : '#ffffff',
+        symbolColor: isDark ? '#e7ebf1' : '#20242b',
+        height: 48,
+      });
+    } catch (_) {}
+  });
+
   ipcMain.handle('window:close', () => {
-    quitting = true;
     if (win) win.close();
     return true;
   });
 
-  ipcMain.handle('window:confirm-close', () => {
-    quitting = true;
-    if (win) win.close();
+  ipcMain.handle('window:close-reply', (_e, request, decision) => {
+    if (!waitingForClose || request !== closeRequest) return false;
+    clearTimeout(closeTimer);
+    closeTimer = null;
+    if (decision === 'responding') return true;
+    waitingForClose = false;
+    if (decision === 'close') quitWindow();
     return true;
   });
 }
@@ -347,8 +458,11 @@ if (!gotLock) {
     app.quit();
   });
 
-  app.on('before-quit', () => {
-    quitting = true;
+  app.on('will-quit', () => {
+    if (closeTimer) {
+      clearTimeout(closeTimer);
+      closeTimer = null;
+    }
     if (watcher) watcher();
   });
 }
